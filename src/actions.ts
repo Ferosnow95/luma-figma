@@ -161,6 +161,33 @@ function buildTransition(opts: ConnectOptions): Transition | null {
   };
 }
 
+function reverseDirection(d: ConnectOptions["direction"]): ConnectOptions["direction"] {
+  switch (d) {
+    case "LEFT": return "RIGHT";
+    case "RIGHT": return "LEFT";
+    case "TOP": return "BOTTOM";
+    case "BOTTOM": return "TOP";
+  }
+}
+
+// Same type/curve as the forward transition, but directional motion is reversed
+// so going back actually feels like stepping backwards.
+function buildBackTransition(opts: ConnectOptions): Transition | null {
+  if (opts.transition === "INSTANT") return null;
+  const easing = buildEasing(opts);
+  const duration = Math.max(0, opts.duration) / 1000;
+  if (opts.transition === "SMART_ANIMATE" || opts.transition === "DISSOLVE") {
+    return { type: opts.transition, easing, duration };
+  }
+  return {
+    type: opts.transition,
+    direction: reverseDirection(opts.direction),
+    matchLayers: false,
+    easing,
+    duration,
+  };
+}
+
 function navAction(destinationId: string, transition: Transition | null): Action {
   return {
     type: "NODE",
@@ -189,6 +216,7 @@ export async function connectSlides(opts: ConnectOptions): Promise<string> {
   }
 
   const transition = buildTransition(opts);
+  const backTransition = buildBackTransition(opts);
 
   for (let i = 0; i < frames.length; i++) {
     const node = frames[i];
@@ -202,11 +230,14 @@ export async function connectSlides(opts: ConnectOptions): Promise<string> {
       reactions.push({ trigger: forwardTrigger(opts), actions: [navAction(frames[0].id, transition)] });
     }
 
-    if (opts.back && opts.trigger === "ARROW_KEYS" && prev) {
-      reactions.push({
-        trigger: { type: "ON_KEY_DOWN", device: "KEYBOARD", keyCodes: [ARROW_LEFT] },
-        actions: [navAction(prev.id, transition)],
-      });
+    if (opts.back) {
+      const backTarget = prev || (opts.loop ? frames[frames.length - 1] : null);
+      if (backTarget) {
+        reactions.push({
+          trigger: { type: "ON_KEY_DOWN", device: "KEYBOARD", keyCodes: [ARROW_LEFT] },
+          actions: [navAction(backTarget.id, backTransition)],
+        });
+      }
     }
 
     await node.setReactionsAsync(reactions);
