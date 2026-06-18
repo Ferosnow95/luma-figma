@@ -20,6 +20,8 @@ import {
   morphGuidesActive,
   fixJitter,
   renameFrames,
+  exportThumbnails,
+  resequenceFrames,
   organizeConnected,
   getDeckInfo,
   ConnectOptions,
@@ -185,6 +187,42 @@ figma.ui.onmessage = async (msg: UIMessage) => {
         const result = await renameFrames(msg.options as { ids: string[]; base: string; start: number });
         figma.notify(result);
         figma.ui.postMessage({ type: "done", message: result });
+        pushSelection();
+        break;
+      }
+      case "get-thumbs": {
+        const ids = ((msg.options as { ids?: string[] }) || {}).ids || [];
+        const list = await exportThumbnails(ids);
+        figma.ui.postMessage({ type: "thumbs", list });
+        break;
+      }
+      case "apply-sequence": {
+        const o = msg.options as {
+          ids: string[];
+          reposition: boolean;
+          renumber: boolean;
+          base: string;
+          rewire: boolean;
+          connectOptions: ConnectOptions;
+        };
+        const steps: string[] = [];
+        if (o.reposition) {
+          const n = await resequenceFrames(o.ids);
+          if (n) steps.push("repositioned");
+        }
+        if (o.renumber) {
+          await renameFrames({ ids: o.ids, base: o.base, start: 1 });
+          steps.push("renumbered");
+        }
+        if (o.rewire) {
+          const co = o.connectOptions;
+          co.orderIds = o.ids;
+          await connectSlides(co);
+          steps.push("reconnected");
+        }
+        const message = steps.length ? `Applied new order \u00b7 ${steps.join(" \u00b7 ")}.` : "Nothing to apply \u2014 turn on a step.";
+        figma.notify(message);
+        figma.ui.postMessage({ type: "done", message });
         pushSelection();
         break;
       }

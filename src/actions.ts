@@ -808,6 +808,44 @@ export async function renameFrames(opts: RenameFramesOptions): Promise<string> {
   return `Renamed ${count} screen${count > 1 ? "s" : ""}.`;
 }
 
+export interface Thumb {
+  id: string;
+  url: string; // data URL (PNG)
+}
+
+// Render each frame to a small PNG so the UI can show reorder thumbnails.
+export async function exportThumbnails(ids: string[]): Promise<Thumb[]> {
+  const out: Thumb[] = [];
+  for (const id of ids) {
+    const n = await figma.getNodeByIdAsync(id);
+    if (!n || !("exportAsync" in n)) continue;
+    try {
+      const bytes = await (n as SceneNode).exportAsync({ format: "PNG", constraint: { type: "WIDTH", value: 160 } });
+      out.push({ id, url: "data:image/png;base64," + figma.base64Encode(bytes) });
+    } catch (e) {
+      /* some nodes can't export \u2014 skip */
+    }
+  }
+  return out;
+}
+
+// Reorder frames into the deck's existing slots: keep the current grid of
+// positions and drop the frames into them following the supplied order.
+export async function resequenceFrames(ids: string[]): Promise<number> {
+  const nodes: DeckFrame[] = [];
+  for (const id of ids) {
+    const n = await figma.getNodeByIdAsync(id);
+    if (n && "type" in n && isDeckFrame(n as SceneNode)) nodes.push(n as DeckFrame);
+  }
+  if (nodes.length < 2) return 0;
+  const slots = orderFrames(nodes.slice(), "position").map((f) => ({ x: f.x, y: f.y }));
+  for (let i = 0; i < nodes.length; i++) {
+    nodes[i].x = slots[i].x;
+    nodes[i].y = slots[i].y;
+  }
+  return nodes.length;
+}
+
 function makeLine(p1: { x: number; y: number }, p2: { x: number; y: number }, color: RGB): RectangleNode {
   const dx = p2.x - p1.x;
   const dy = p2.y - p1.y;
