@@ -776,6 +776,38 @@ export async function renameLayer(id: string, name: string): Promise<string> {
   return `Renamed layer to "${name}".`;
 }
 
+export interface RenameFramesOptions {
+  ids: string[]; // frames to rename, in the order numbers should follow
+  base: string; // base name; use "{n}" to place the number, else number is appended
+  start: number; // first number
+}
+
+// Bulk-rename frames in the given order, numbering them sequentially. The number
+// is zero-padded to the width of the highest value so names sort naturally.
+export async function renameFrames(opts: RenameFramesOptions): Promise<string> {
+  const ids = opts.ids || [];
+  if (!ids.length) throw new Error("Select screens to rename.");
+  const start = typeof opts.start === "number" ? opts.start : 1;
+  const base = (opts.base || "").trim();
+  const pad = String(start + ids.length - 1).length;
+  let n = start;
+  let count = 0;
+  for (const id of ids) {
+    const node = await figma.getNodeByIdAsync(id);
+    if (!node || node.type === "PAGE" || node.type === "DOCUMENT" || !("name" in node)) continue;
+    const num = String(n).padStart(pad, "0");
+    let name: string;
+    if (base.indexOf("{n}") !== -1) name = base.replace(/\{n\}/g, num);
+    else if (base) name = `${base} ${num}`;
+    else name = num;
+    (node as SceneNode).name = name;
+    n++;
+    count++;
+  }
+  if (!count) throw new Error("No frames found to rename.");
+  return `Renamed ${count} screen${count > 1 ? "s" : ""}.`;
+}
+
 function makeLine(p1: { x: number; y: number }, p2: { x: number; y: number }, color: RGB): RectangleNode {
   const dx = p2.x - p1.x;
   const dy = p2.y - p1.y;

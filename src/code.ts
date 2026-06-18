@@ -19,6 +19,7 @@ import {
   redrawMorphGuides,
   morphGuidesActive,
   fixJitter,
+  renameFrames,
   organizeConnected,
   getDeckInfo,
   ConnectOptions,
@@ -178,6 +179,13 @@ figma.ui.onmessage = async (msg: UIMessage) => {
         const result = await clearMorphGuides();
         figma.notify(result);
         figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "rename-frames": {
+        const result = await renameFrames(msg.options as { ids: string[]; base: string; start: number });
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        pushSelection();
         break;
       }
       case "organize-connected": {

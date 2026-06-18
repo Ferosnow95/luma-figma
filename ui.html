@@ -56,10 +56,6 @@
       border-right: 1px solid var(--stroke);
       background: var(--bg-secondary);
     }
-    .rail .logo {
-      width: 24px; height: 24px; margin-bottom: 8px; border-radius: 6px;
-      background: var(--brand);
-    }
     .rail button {
       width: 38px; height: 36px; border: 0; border-radius: 6px;
       background: transparent; color: var(--muted); cursor: pointer;
@@ -179,7 +175,9 @@
     .seqlist::-webkit-scrollbar { width: 9px; }
     .seqlist::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--bg-secondary); }
     .seqlist .empty { color: var(--muted); font-size: 11px; }
-    .seqitem { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--bg); font-size: 12px; }
+    .seqitem { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--bg); font-size: 12px; cursor: pointer; transition: border-color 0.12s, background 0.12s; }
+    .seqitem:hover { border-color: var(--brand); }
+    .seqitem.sel { border-color: var(--brand); background: var(--bg-hover); }
     .seqitem.dragging { opacity: 0.5; border-color: var(--brand); }
     .seqitem.drop-target { box-shadow: inset 0 0 0 1px var(--brand); }
     .seqitem .grip { flex: 0 0 auto; display: flex; align-items: center; color: var(--muted); cursor: grab; }
@@ -268,7 +266,6 @@
 <body>
   <div class="app">
     <nav class="rail">
-      <div class="logo"></div>
       <button data-tab="flow" class="active" title="Slide Flow">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="7" height="14" rx="1.5"/><rect x="14" y="5" width="7" height="14" rx="1.5"/><path d="M10 12h4"/></svg>
       </button>
@@ -319,6 +316,12 @@
               <button data-v="name">Name</button>
             </div>
             <div class="seqlist" id="seqList" style="margin-top:8px;"><span class="empty">Select frames to set their order…</span></div>
+            <label class="row">Rename screens</label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <input type="text" id="renameBase" value="Slide" placeholder="Slide" style="flex:1;" />
+              <button class="ghost" id="renameScreensBtn" style="width:auto; white-space:nowrap;">Rename in order</button>
+            </div>
+            <p class="hint" style="margin:6px 0 0;">Numbers follow the list order — “Slide 01”, “Slide 02”… Use <b>{n}</b> to place the number anywhere.</p>
           </div>
 
           <div class="card">
@@ -612,6 +615,7 @@
       jitterThreshold: 2,
       received: [],
       seq: [],
+      selfSelecting: false,
     };
 
     var PRESET_BEZIER = {
@@ -794,6 +798,27 @@
     $("connectBtn").onclick = function () {
       post({ type: "connect-slides", options: connectOptionsObj() });
       setStatus("Connecting slides\u2026");
+    };
+    $("renameScreensBtn").onclick = function () {
+      if (!state.seq.length) { setStatus("Select screens first.", "err"); return; }
+      var base = $("renameBase").value || "";
+      var ids = state.seq.map(function (s) { return s.id; });
+      var pad = String(state.seq.length).length;
+      // Optimistically rename in the list (keeps every row + matches the engine's
+      // numbering) so the list doesn't depend on the canvas selection echo.
+      var nameById = {};
+      state.seq = state.seq.map(function (s, i) {
+        var num = String(i + 1);
+        while (num.length < pad) num = "0" + num;
+        var nm = base.indexOf("{n}") !== -1 ? base.replace(/\{n\}/g, num) : (base.trim() ? base.trim() + " " + num : num);
+        nameById[s.id] = nm;
+        return { id: s.id, name: nm };
+      });
+      state.received = state.received.map(function (r) { return nameById[r.id] !== undefined ? { id: r.id, name: nameById[r.id] } : r; });
+      renderSeq();
+      state.selfSelecting = true; // ignore the selection echo from the rename
+      post({ type: "rename-frames", options: { ids: ids, base: base, start: 1 } });
+      setStatus("Renaming screens\u2026");
     };
     function updatePolishDesc() {
       $("pNormDesc").textContent = "All frames to " + (+$("normW").value || 1920) + "\u00d7" + (+$("normH").value || 1080);
@@ -1003,6 +1028,14 @@
           row.draggable = false;
           commitSeqFromDom();
         });
+        row.addEventListener("click", function (e) {
+          if (e.target && e.target.closest && e.target.closest(".grip")) return;
+          $("seqList").querySelectorAll(".seqitem.sel").forEach(function (x) { x.classList.remove("sel"); });
+          row.classList.add("sel");
+          state.selfSelecting = true;
+          post({ type: "morph-select", options: { ids: [item.id] } });
+          setStatus("Selected \u201c" + item.name + "\u201d on the canvas.", "ok");
+        });
         box.appendChild(row);
       });
     }
@@ -1057,7 +1090,10 @@
         var info = msg.info;
         var count = info.selectedFrames || 0;
         $("selBadge").textContent = count ? count + " selected" : (info.totalFrames + " on page");
-        syncSeq(info.ids, info.names);
+        // A row click selects one frame on the canvas; don't let that collapse the
+        // list the user built — skip reconciliation for self-initiated selections.
+        if (state.selfSelecting) { state.selfSelecting = false; }
+        else { syncSeq(info.ids, info.names); }
         if (state.tab === "morph" && count === 2) requestMorph();
       } else if (msg.type === "done") {
         setStatus(msg.message, "ok");
