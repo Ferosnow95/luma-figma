@@ -1075,6 +1075,7 @@ const BRANCH_IDS = "luma-branch-ids"; // on a parent frame: JSON array of branch
 const BRANCH_SECTION = "luma-branch-section"; // on a child section: parent frame id
 const BRANCH_ROOT = "luma-branch-root"; // on the outer "Luma · Branches" section: "1"
 const BRANCH_LINK = "luma-branch-link"; // on a connector group: branch id
+const BRANCH_WIRED = "luma-branch-wired"; // on a branch frame: "1" when spliced into the flow
 const BRANCH_COLOR: RGB = { r: 0.55, g: 0.36, b: 0.96 };
 const SEC_PAD = 64; // inner padding inside a section
 const SEC_GAP = 80; // gap between sibling clones / child sections
@@ -1082,6 +1083,7 @@ const SEC_GAP = 80; // gap between sibling clones / child sections
 export interface BranchInfo {
   id: string;
   name: string;
+  wired: boolean;
 }
 export type BranchMap = { [parentId: string]: BranchInfo[] };
 
@@ -1111,7 +1113,7 @@ export function getBranchMap(): BranchMap {
   collectBranchClones(figma.currentPage, clones);
   for (const c of clones) {
     const pid = c.getPluginData(BRANCH_OF);
-    if (pid) (map[pid] = map[pid] || []).push({ id: c.id, name: c.name });
+    if (pid) (map[pid] = map[pid] || []).push({ id: c.id, name: c.name, wired: c.getPluginData(BRANCH_WIRED) === "1" });
   }
   return map;
 }
@@ -1167,41 +1169,66 @@ function findBranchSection(parentId: string): SectionNode | null {
   return found;
 }
 
-// The per-screen child section that lives inside the branch root.
+// The per-screen child section that lives inside the branch root. Coordinates
+// of section children are relative to the section, so all offsets below are
+// small section-local values (NOT page coordinates).
 function ensureBranchSection(parent: DeckFrame): SectionNode {
   const root = ensureBranchRoot();
   const existing = findBranchSection(parent.id);
   if (existing) {
-    if (existing.parent !== root) root.appendChild(existing); // migrate under root
+    if (existing.parent !== root) {
+      root.appendChild(existing); // migrate a legacy top-level section under the root
+      existing.x = SEC_PAD;
+      existing.y = nextSectionTop(root, existing);
+      relayoutSectionClones(existing);
+      reflowBranchRoot(root);
+    }
     return existing;
   }
   const sec = figma.createSection();
   sec.name = "Branches \u00b7 " + parent.name;
   sec.setPluginData(BRANCH_SECTION, parent.id);
   root.appendChild(sec);
-  // Stack this child section below any existing siblings, inside the root.
-  let top = root.y + SEC_PAD;
-  for (const c of root.children) {
-    if (c !== sec && c.type === "SECTION") top = Math.max(top, c.y + c.height + SEC_GAP);
-  }
-  sec.x = root.x + SEC_PAD;
-  sec.y = top;
+  sec.x = SEC_PAD; // relative to the root section
+  sec.y = nextSectionTop(root, sec);
   sec.resizeWithoutConstraints(Math.max(parent.width + SEC_PAD * 2, 480), parent.height + SEC_PAD * 2);
   reflowBranchRoot(root);
   return sec;
 }
 
-// Next free slot for a clone inside a child section (clones grow rightward).
-function nextBranchSpot(sec: SectionNode): { x: number; y: number } {
-  const clones = sec.children.filter((k) => k.getPluginData(BRANCH_MARK) === "1");
-  const y = sec.y + SEC_PAD;
-  if (!clones.length) return { x: sec.x + SEC_PAD, y };
-  let maxRight = -Infinity;
-  for (const k of clones) maxRight = Math.max(maxRight, k.x + k.width);
-  return { x: maxRight + SEC_GAP, y };
+// Stack child sections vertically: y of the next section, relative to the root.
+function nextSectionTop(root: SectionNode, exclude: SectionNode): number {
+  let top = SEC_PAD;
+  for (const c of root.children) {
+    if (c !== exclude && c.type === "SECTION") top = Math.max(top, c.y + c.height + SEC_GAP);
+  }
+  return top;
 }
 
-// Grow a child section to wrap its clones (anchored at its own top-left).
+// Next free slot for a clone inside a child section (clones grow rightward),
+// in section-relative coordinates.
+function nextBranchSpot(sec: SectionNode): { x: number; y: number } {
+  const clones = sec.children.filter((k) => k.getPluginData(BRANCH_MARK) === "1");
+  if (!clones.length) return { x: SEC_PAD, y: SEC_PAD };
+  let maxRight = -Infinity;
+  for (const k of clones) maxRight = Math.max(maxRight, k.x + k.width);
+  return { x: maxRight + SEC_GAP, y: SEC_PAD };
+}
+
+// Re-lay clones left-to-right (used when migrating a legacy section).
+function relayoutSectionClones(sec: SectionNode): void {
+  let x = SEC_PAD;
+  for (const k of sec.children) {
+    if (k.getPluginData(BRANCH_MARK) !== "1") continue;
+    k.x = x;
+    k.y = SEC_PAD;
+    x += k.width + SEC_GAP;
+  }
+  reflowBranchSection(sec);
+}
+
+// Grow a child section to wrap its clones. Clone coords are section-relative,
+// so the section's own width/height is just maxEdge + padding.
 function reflowBranchSection(sec: SectionNode): void {
   const clones = sec.children.filter((k) => k.getPluginData(BRANCH_MARK) === "1");
   if (!clones.length) return;
@@ -1211,10 +1238,11 @@ function reflowBranchSection(sec: SectionNode): void {
     maxRight = Math.max(maxRight, k.x + k.width);
     maxBottom = Math.max(maxBottom, k.y + k.height);
   }
-  sec.resizeWithoutConstraints(Math.max(maxRight + SEC_PAD - sec.x, 480), Math.max(maxBottom + SEC_PAD - sec.y, 240));
+  sec.resizeWithoutConstraints(Math.max(maxRight + SEC_PAD, 480), Math.max(maxBottom + SEC_PAD, 240));
 }
 
-// Grow the root section to wrap every child section (no reposition of kids).
+// Grow the root section to wrap every child section. Child coords are
+// root-relative, so width/height is maxEdge + padding.
 function reflowBranchRoot(root: SectionNode): void {
   if (!root.children.length) return;
   let maxRight = -Infinity;
@@ -1223,13 +1251,16 @@ function reflowBranchRoot(root: SectionNode): void {
     maxRight = Math.max(maxRight, k.x + k.width);
     maxBottom = Math.max(maxBottom, k.y + k.height);
   }
-  root.resizeWithoutConstraints(Math.max(maxRight + SEC_PAD - root.x, 600), Math.max(maxBottom + SEC_PAD - root.y, 220));
+  root.resizeWithoutConstraints(Math.max(maxRight + SEC_PAD, 600), Math.max(maxBottom + SEC_PAD, 220));
 }
 
 async function drawBranchLink(parent: DeckFrame, branch: SceneNode): Promise<void> {
   removeBranchLink(branch.id);
-  const from = { x: parent.x + parent.width / 2, y: parent.y + parent.height };
-  const to = { x: branch.x + branch.width / 2, y: branch.y };
+  const pb = parent.absoluteBoundingBox;
+  const cb = branch.absoluteBoundingBox;
+  if (!pb || !cb) return; // can't anchor a connector without absolute bounds
+  const from = { x: pb.x + pb.width / 2, y: pb.y + pb.height };
+  const to = { x: cb.x + cb.width / 2, y: cb.y };
   const parts: SceneNode[] = [makeLine(from, to, BRANCH_COLOR), makeDot(to, BRANCH_COLOR)];
   try {
     await figma.loadFontAsync({ family: "Inter", style: "Medium" });
@@ -1290,14 +1321,19 @@ export async function promoteBranch(branchId: string): Promise<{ name: string; p
   const branch = node as DeckFrame;
   const parentId = branch.getPluginData(BRANCH_OF);
   const parent = parentId ? await figma.getNodeByIdAsync(parentId) : null;
-  const px = parent && "x" in parent ? (parent as DeckFrame).x : branch.x;
-  const py = parent && "y" in parent ? (parent as DeckFrame).y : branch.y;
-  const pw = parent && "width" in parent ? (parent as DeckFrame).width : branch.width;
-  figma.currentPage.appendChild(branch); // detach from the section, keep position
-  branch.x = px + pw + 80;
-  branch.y = py;
+  const pbox = parent && "absoluteBoundingBox" in parent ? (parent as SceneNode).absoluteBoundingBox : null;
+  const bbox = branch.absoluteBoundingBox; // capture before reparenting
+  figma.currentPage.appendChild(branch); // detach from the section
+  if (pbox) {
+    branch.x = pbox.x + pbox.width + 80;
+    branch.y = pbox.y;
+  } else if (bbox) {
+    branch.x = bbox.x;
+    branch.y = bbox.y;
+  }
   branch.setPluginData(BRANCH_MARK, "");
   branch.setPluginData(BRANCH_OF, "");
+  branch.setPluginData(BRANCH_WIRED, "");
   removeBranchLink(branchId);
   if (parent && "getPluginData" in parent) {
     const ids = readBranchIds(parent as SceneNode).filter((id) => id !== branchId);
@@ -1325,6 +1361,55 @@ export async function removeBranch(branchId: string): Promise<string> {
   node.remove();
   cleanupEmptyBranchSections();
   return "Removed branch \u201c" + name + "\u201d.";
+}
+
+// Splice a branch into the main prototype flow: parent --> branch --> next slide.
+// Reuses the Slide Flow transition/trigger settings so it matches the deck feel.
+export async function wireBranchIntoFlow(opts: {
+  branchId: string;
+  connectOptions: ConnectOptions;
+}): Promise<string> {
+  const co = opts.connectOptions;
+  const node = await figma.getNodeByIdAsync(opts.branchId);
+  if (!node || !("type" in node) || (node as SceneNode).getPluginData(BRANCH_MARK) !== "1") {
+    throw new Error("Select a branch to apply to the flow.");
+  }
+  const branch = node as DeckFrame;
+  const parentId = branch.getPluginData(BRANCH_OF);
+  const parentNode = parentId ? await figma.getNodeByIdAsync(parentId) : null;
+  if (!parentNode || !("type" in parentNode) || !isDeckFrame(parentNode as SceneNode)) {
+    throw new Error("This branch has no parent slide.");
+  }
+  const parent = parentNode as DeckFrame;
+
+  // Find the deck slide that follows the parent in the current order.
+  const deck = orderFrames(collectFrames([]), "position");
+  const idx = deck.findIndex((f) => f.id === parent.id);
+  const next = idx >= 0 ? deck[idx + 1] : undefined;
+  const prev = idx > 0 ? deck[idx - 1] : undefined;
+
+  const transition = buildTransition(co);
+  const back = buildBackTransition(co);
+  const fwd = forwardTrigger(co);
+  const backTrig: Trigger = { type: "ON_KEY_DOWN", device: "KEYBOARD", keyCodes: [ARROW_LEFT] };
+
+  // parent -> branch (and keep a back step to the previous slide).
+  const parentReactions: Reaction[] = [{ trigger: fwd, actions: [navAction(branch.id, transition)] }];
+  if (co.back && prev) {
+    parentReactions.push({ trigger: backTrig, actions: [navAction(prev.id, back)] });
+  }
+  // branch -> next slide (and back to the parent).
+  const branchReactions: Reaction[] = [];
+  if (next) branchReactions.push({ trigger: fwd, actions: [navAction(next.id, transition)] });
+  if (co.back) branchReactions.push({ trigger: backTrig, actions: [navAction(parent.id, back)] });
+
+  await parent.setReactionsAsync(parentReactions);
+  await branch.setReactionsAsync(branchReactions);
+  branch.setPluginData(BRANCH_WIRED, "1");
+
+  return next
+    ? "Wired into flow \u00b7 " + parent.name + " \u2192 branch \u2192 " + next.name + "."
+    : "Wired into flow \u00b7 " + parent.name + " \u2192 branch (end of deck).";
 }
 
 function cleanupEmptyBranchSections(): void {

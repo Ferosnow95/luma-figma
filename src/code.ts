@@ -26,6 +26,7 @@ import {
   branchFrame,
   promoteBranch,
   removeBranch,
+  wireBranchIntoFlow,
   getBranchMap,
   getDeckInfo,
   ConnectOptions,
@@ -227,6 +228,14 @@ figma.ui.onmessage = async (msg: UIMessage) => {
       case "remove-branch": {
         const o = msg.options as { id: string };
         const message = await removeBranch(o.id);
+        figma.notify(message);
+        figma.ui.postMessage({ type: "branches", map: getBranchMap() });
+        figma.ui.postMessage({ type: "done", message });
+        break;
+      }
+      case "wire-branch": {
+        const o = msg.options as { id: string; connectOptions: ConnectOptions };
+        const message = await wireBranchIntoFlow({ branchId: o.id, connectOptions: o.connectOptions });
         figma.notify(message);
         figma.ui.postMessage({ type: "branches", map: getBranchMap() });
         figma.ui.postMessage({ type: "done", message });
