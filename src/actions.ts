@@ -938,8 +938,6 @@ export async function duplicateSlide(id: string): Promise<{ id: string; name: st
     clone.name = origName + " copy";
   }
 
-  figma.viewport.scrollAndZoomIntoView([clone]);
-  figma.viewport.zoom = figma.viewport.zoom * 0.55; // pull back so it's centered but not too tight
   figma.currentPage.selection = []; // keep the sequence list showing the full deck
   return { id: clone.id, name: clone.name, index: idx + 1 };
 }
