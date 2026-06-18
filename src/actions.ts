@@ -117,6 +117,21 @@ function collectFrames(selection: readonly SceneNode[]): DeckFrame[] {
   return out;
 }
 
+// Gather every real deck frame on the page, descending into sections, but
+// skipping branch clones. Lets the deck survive even if a section swallowed it.
+function collectDeckFramesDeep(): DeckFrame[] {
+  const out: DeckFrame[] = [];
+  const walk = (node: ChildrenMixin): void => {
+    for (const c of node.children) {
+      if (c.getPluginData && c.getPluginData(BRANCH_MARK) === "1") continue;
+      if (isDeckFrame(c)) out.push(c);
+      else if (c.type === "SECTION") walk(c);
+    }
+  };
+  walk(figma.currentPage);
+  return out;
+}
+
 function naturalCompare(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
@@ -874,12 +889,21 @@ export async function duplicateSlide(id: string): Promise<{ id: string; name: st
     throw new Error("Select a slide to duplicate.");
   }
   const orig = node as DeckFrame;
-  const deck = orderFrames(collectFrames([]), "position");
+  // Work within whatever container the slide actually lives in (the page, or a
+  // section if the deck got absorbed into one) so we never miss it.
+  const parent = orig.parent;
+  if (!parent || !("children" in parent) || !("appendChild" in parent)) {
+    throw new Error("This slide has no container to duplicate into.");
+  }
+  const siblings = (parent.children as readonly SceneNode[]).filter(
+    (c) => isDeckFrame(c) && c.getPluginData(BRANCH_MARK) !== "1"
+  ) as DeckFrame[];
+  const deck = orderFrames(siblings, "position");
   const idx = deck.findIndex((f) => f.id === orig.id);
   if (idx < 0) throw new Error("That slide isn't part of the deck.");
 
   const clone = orig.clone();
-  figma.currentPage.appendChild(clone);
+  (parent as ChildrenMixin).appendChild(clone);
 
   const slots = deck.map((f) => ({ x: f.x, y: f.y }));
   slots.push(nextDeckSlot(deck));
@@ -1492,11 +1516,11 @@ function cleanupEmptyBranchSections(): void {
 
 export function getDeckInfo(): DeckInfo {
   const selectedFrames = collectFrames(figma.currentPage.selection);
-  const totalFrames = figma.currentPage.children.filter(isDeckFrame).length;
-  const ordered = orderFrames(selectedFrames.length ? selectedFrames : collectFrames([]), "position");
+  const deck = collectDeckFramesDeep();
+  const ordered = orderFrames(selectedFrames.length ? selectedFrames : deck, "position");
   return {
     selectedFrames: selectedFrames.length,
-    totalFrames,
+    totalFrames: deck.length,
     names: ordered.slice(0, 40).map((f) => f.name),
     ids: ordered.slice(0, 40).map((f) => f.id),
   };
