@@ -27,6 +27,7 @@ export type TriggerKind = "ON_CLICK" | "ARROW_KEYS" | "AUTO_ADVANCE";
 
 export interface ConnectOptions {
   order: Order;
+  orderIds?: string[]; // explicit manual order (frame ids) — overrides `order` when present
   transition: TransitionKind;
   direction: "LEFT" | "RIGHT" | "TOP" | "BOTTOM";
   easing: EasingChoice;
@@ -83,6 +84,7 @@ export interface DeckInfo {
   selectedFrames: number;
   totalFrames: number;
   names: string[];
+  ids: string[];
 }
 
 type DeckFrame = FrameNode | ComponentNode | InstanceNode;
@@ -132,6 +134,30 @@ function orderFrames(frames: DeckFrame[], order: Order): DeckFrame[] {
     return a.x - b.x;
   });
   return arr;
+}
+
+// Honor a manual drag-to-reorder list when the UI supplies one; otherwise fall
+// back to the position/name preset. Ids no longer on the page are skipped, and
+// any frames missing from the list are appended in their preset order.
+function orderFramesForConnect(frames: DeckFrame[], opts: ConnectOptions): DeckFrame[] {
+  const ids = opts.orderIds;
+  if (ids && ids.length) {
+    const byId = new Map<string, DeckFrame>();
+    for (const f of frames) byId.set(f.id, f);
+    const out: DeckFrame[] = [];
+    for (const id of ids) {
+      const f = byId.get(id);
+      if (f) {
+        out.push(f);
+        byId.delete(id);
+      }
+    }
+    if (byId.size) {
+      for (const f of orderFrames(frames, opts.order)) if (byId.has(f.id)) out.push(f);
+    }
+    return out;
+  }
+  return orderFrames(frames, opts.order);
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +236,7 @@ function forwardTrigger(opts: ConnectOptions): Trigger {
 }
 
 export async function connectSlides(opts: ConnectOptions): Promise<string> {
-  const frames = orderFrames(collectFrames(figma.currentPage.selection), opts.order);
+  const frames = orderFramesForConnect(collectFrames(figma.currentPage.selection), opts);
   if (frames.length < 2) {
     throw new Error("Select at least 2 frames (or open a page with 2+ frames) to connect.");
   }
@@ -976,5 +1002,6 @@ export function getDeckInfo(): DeckInfo {
     selectedFrames: selectedFrames.length,
     totalFrames,
     names: ordered.slice(0, 40).map((f) => f.name),
+    ids: ordered.slice(0, 40).map((f) => f.id),
   };
 }

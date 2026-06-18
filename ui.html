@@ -174,6 +174,20 @@
     .flow .arrow { color: var(--brand); font-size: 12px; }
     .flow .empty { color: var(--muted); font-size: 11px; }
 
+    /* sortable sequence list (drag to reorder) */
+    .seqlist { display: flex; flex-direction: column; gap: 5px; max-height: 280px; overflow-y: auto; }
+    .seqlist::-webkit-scrollbar { width: 9px; }
+    .seqlist::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--bg-secondary); }
+    .seqlist .empty { color: var(--muted); font-size: 11px; }
+    .seqitem { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--bg); font-size: 12px; }
+    .seqitem.dragging { opacity: 0.5; border-color: var(--brand); }
+    .seqitem.drop-target { box-shadow: inset 0 0 0 1px var(--brand); }
+    .seqitem .grip { flex: 0 0 auto; display: flex; align-items: center; color: var(--muted); cursor: grab; }
+    .seqitem .grip:active { cursor: grabbing; }
+    .seqitem .grip svg { width: 8px; height: 14px; }
+    .seqitem .idx { flex: 0 0 auto; min-width: 16px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 11px; }
+    .seqitem .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
     /* bezier studio */
     .studio { display: flex; gap: 14px; align-items: flex-start; }
     .curvebox { flex: 0 0 168px; }
@@ -298,13 +312,13 @@
         <section class="view active" id="view-flow">
           <div class="card">
             <h3>Sequence</h3>
-            <p class="hint">Luma wires the frames in order. Order by their position on the canvas or by name.</p>
-            <div class="flow" id="flowChips"><span class="empty">Select frames to preview the order…</span></div>
+            <p class="hint">Drag the handles to set the exact order Luma wires the frames. Or sort them by canvas position or name.</p>
             <label class="row">Order by</label>
             <div class="seg" id="seg-order">
               <button data-v="position" class="active">Position</button>
               <button data-v="name">Name</button>
             </div>
+            <div class="seqlist" id="seqList" style="margin-top:8px;"><span class="empty">Select frames to set their order…</span></div>
           </div>
 
           <div class="card">
@@ -596,6 +610,8 @@
       pConnect: true,
       morphFilter: "all",
       jitterThreshold: 2,
+      received: [],
+      seq: [],
     };
 
     var PRESET_BEZIER = {
@@ -658,7 +674,7 @@
         };
       });
     }
-    segment("seg-order", "order");
+    segment("seg-order", "order", applyOrderPreset);
     segment("seg-dir", "direction");
     segment("seg-trigger", "trigger", function (v) {
       $("autoWrap").style.display = v === "AUTO_ADVANCE" ? "block" : "none";
@@ -768,7 +784,8 @@
     /* ---- action buttons ---- */
     function connectOptionsObj() {
       return {
-        order: state.order, transition: state.transition, direction: state.direction,
+        order: state.order, orderIds: state.seq.map(function (s) { return s.id; }),
+        transition: state.transition, direction: state.direction,
         easing: state.easing, bezier: state.bezier, duration: state.duration,
         trigger: state.trigger, autoDelay: state.autoDelay, loop: state.loop, back: state.back,
         flowName: "Slide Flow",
@@ -929,16 +946,108 @@
       setStatus("Organizing\u2026");
     };
 
-    /* ---- flow chip preview ---- */
-    function renderFlow(names) {
-      var box = $("flowChips");
+    /* ---- sortable sequence list ---- */
+    var GRIP_SVG = '<svg viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="3" r="1"/><circle cx="6" cy="3" r="1"/><circle cx="2" cy="7" r="1"/><circle cx="6" cy="7" r="1"/><circle cx="2" cy="11" r="1"/><circle cx="6" cy="11" r="1"/></svg>';
+
+    // Reconcile the incoming selection (position order) with the user's manual
+    // order: keep existing rows where they are, append new frames, drop removed.
+    function syncSeq(ids, names) {
+      ids = ids || []; names = names || [];
+      state.received = ids.map(function (id, i) { return { id: id, name: names[i] }; });
+      var nameById = {};
+      state.received.forEach(function (r) { nameById[r.id] = r.name; });
+      var kept = [];
+      var seen = {};
+      state.seq.forEach(function (s) {
+        if (nameById[s.id] !== undefined && !seen[s.id]) { kept.push({ id: s.id, name: nameById[s.id] }); seen[s.id] = true; }
+      });
+      state.received.forEach(function (r) { if (!seen[r.id]) { kept.push({ id: r.id, name: r.name }); seen[r.id] = true; } });
+      state.seq = kept;
+      renderSeq();
+    }
+
+    function applyOrderPreset(v) {
+      if (!state.received.length) return;
+      if (v === "name") {
+        state.seq = state.received.slice().sort(function (a, b) {
+          return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+        });
+      } else {
+        state.seq = state.received.slice();
+      }
+      renderSeq();
+      setStatus("Sorted by " + (v === "name" ? "name" : "position") + ".", "ok");
+    }
+
+    function renderSeq() {
+      var box = $("seqList");
       box.innerHTML = "";
-      if (!names || !names.length) { box.innerHTML = '<span class="empty">Select frames to preview the order…</span>'; return; }
-      names.forEach(function (n, i) {
-        if (i) { var a = document.createElement("span"); a.className = "arrow"; a.textContent = "→"; box.appendChild(a); }
-        var s = document.createElement("span"); s.className = "slide"; s.textContent = n; box.appendChild(s);
+      if (!state.seq.length) { box.innerHTML = '<span class="empty">Select frames to set their order…</span>'; return; }
+      state.seq.forEach(function (item, i) {
+        var row = document.createElement("div");
+        row.className = "seqitem";
+        row.setAttribute("data-id", item.id);
+        var grip = document.createElement("span"); grip.className = "grip"; grip.innerHTML = GRIP_SVG; grip.title = "Drag to reorder";
+        var idx = document.createElement("span"); idx.className = "idx"; idx.textContent = i + 1;
+        var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = item.name; nm.title = item.name;
+        row.appendChild(grip); row.appendChild(idx); row.appendChild(nm);
+        grip.addEventListener("mousedown", function () { row.draggable = true; });
+        grip.addEventListener("mouseup", function () { row.draggable = false; });
+        row.addEventListener("dragstart", function (e) {
+          row.classList.add("dragging");
+          e.dataTransfer.effectAllowed = "move";
+          try { e.dataTransfer.setData("text/plain", item.id); } catch (_) {}
+        });
+        row.addEventListener("dragend", function () {
+          row.classList.remove("dragging");
+          row.draggable = false;
+          commitSeqFromDom();
+        });
+        box.appendChild(row);
       });
     }
+
+    function seqDragAfter(box, y) {
+      var els = [].slice.call(box.querySelectorAll(".seqitem:not(.dragging)"));
+      var closest = null, closestOffset = -Infinity;
+      els.forEach(function (el) {
+        var r = el.getBoundingClientRect();
+        var offset = y - r.top - r.height / 2;
+        if (offset < 0 && offset > closestOffset) { closestOffset = offset; closest = el; }
+      });
+      return closest;
+    }
+
+    function renumberSeq() {
+      var rows = $("seqList").querySelectorAll(".seqitem");
+      for (var i = 0; i < rows.length; i++) { rows[i].querySelector(".idx").textContent = i + 1; }
+    }
+
+    function commitSeqFromDom() {
+      var rows = $("seqList").querySelectorAll(".seqitem");
+      var byId = {};
+      state.seq.forEach(function (s) { byId[s.id] = s; });
+      var next = [];
+      for (var i = 0; i < rows.length; i++) {
+        var id = rows[i].getAttribute("data-id");
+        if (byId[id]) next.push(byId[id]);
+      }
+      state.seq = next;
+      renumberSeq();
+      setStatus("Order updated — hit Connect slides to apply.", "ok");
+    }
+
+    $("seqList").addEventListener("dragover", function (e) {
+      var dragging = $("seqList").querySelector(".dragging");
+      if (!dragging) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      var after = seqDragAfter($("seqList"), e.clientY);
+      if (after == null) $("seqList").appendChild(dragging);
+      else if (after !== dragging) $("seqList").insertBefore(dragging, after);
+      renumberSeq();
+    });
+    $("seqList").addEventListener("drop", function (e) { e.preventDefault(); });
 
     /* ---- messages from plugin ---- */
     window.onmessage = function (e) {
@@ -948,7 +1057,7 @@
         var info = msg.info;
         var count = info.selectedFrames || 0;
         $("selBadge").textContent = count ? count + " selected" : (info.totalFrames + " on page");
-        renderFlow(info.names);
+        syncSeq(info.ids, info.names);
         if (state.tab === "morph" && count === 2) requestMorph();
       } else if (msg.type === "done") {
         setStatus(msg.message, "ok");
