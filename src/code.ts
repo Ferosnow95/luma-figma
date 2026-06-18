@@ -190,6 +190,13 @@ figma.ui.onmessage = async (msg: UIMessage) => {
         pushSelection();
         break;
       }
+      case "rename-layer": {
+        const o = msg.options as { id: string; name: string };
+        const result = await renameLayer(o.id, o.name);
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
       case "get-thumbs": {
         const ids = ((msg.options as { ids?: string[] }) || {}).ids || [];
         const list = await exportThumbnails(ids);
