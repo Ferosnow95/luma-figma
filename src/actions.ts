@@ -1072,9 +1072,12 @@ export async function organizeConnected(opts: OrganizeOptions): Promise<string> 
 const BRANCH_MARK = "luma-branch"; // on a branch frame: "1"
 const BRANCH_OF = "luma-branch-of"; // on a branch frame: parent frame id
 const BRANCH_IDS = "luma-branch-ids"; // on a parent frame: JSON array of branch ids
-const BRANCH_SECTION = "luma-branch-section"; // on a section: parent frame id
+const BRANCH_SECTION = "luma-branch-section"; // on a child section: parent frame id
+const BRANCH_ROOT = "luma-branch-root"; // on the outer "Luma · Branches" section: "1"
 const BRANCH_LINK = "luma-branch-link"; // on a connector group: branch id
 const BRANCH_COLOR: RGB = { r: 0.55, g: 0.36, b: 0.96 };
+const SEC_PAD = 64; // inner padding inside a section
+const SEC_GAP = 80; // gap between sibling clones / child sections
 
 export interface BranchInfo {
   id: string;
@@ -1093,64 +1096,134 @@ function readBranchIds(node: SceneNode): string[] {
   }
 }
 
-// Scan every section for tagged branch frames and group them by parent id.
+// Walk the subtree (descending into sections) collecting tagged branch frames.
+function collectBranchClones(node: ChildrenMixin, out: SceneNode[]): void {
+  for (const child of node.children) {
+    if (child.getPluginData(BRANCH_MARK) === "1") out.push(child);
+    else if (child.type === "SECTION") collectBranchClones(child, out);
+  }
+}
+
+// Group every branch frame on the page by the parent it was branched from.
 export function getBranchMap(): BranchMap {
   const map: BranchMap = {};
-  for (const c of figma.currentPage.children) {
-    if (c.type !== "SECTION") continue;
-    for (const child of c.children) {
-      if (child.getPluginData(BRANCH_MARK) === "1") {
-        const pid = child.getPluginData(BRANCH_OF);
-        if (pid) (map[pid] = map[pid] || []).push({ id: child.id, name: child.name });
-      }
-    }
+  const clones: SceneNode[] = [];
+  collectBranchClones(figma.currentPage, clones);
+  for (const c of clones) {
+    const pid = c.getPluginData(BRANCH_OF);
+    if (pid) (map[pid] = map[pid] || []).push({ id: c.id, name: c.name });
   }
   return map;
 }
 
-function ensureBranchSection(parent: DeckFrame): SectionNode {
+function findBranchRoot(): SectionNode | null {
   for (const c of figma.currentPage.children) {
-    if (c.type === "SECTION" && c.getPluginData(BRANCH_SECTION) === parent.id) return c;
+    if (c.type === "SECTION" && c.getPluginData(BRANCH_ROOT) === "1") return c;
+  }
+  return null;
+}
+
+// The outer section that groups every per-screen branch section.
+function ensureBranchRoot(): SectionNode {
+  const existing = findBranchRoot();
+  if (existing) return existing;
+  const root = figma.createSection();
+  root.name = "Luma \u00b7 Branches";
+  root.setPluginData(BRANCH_ROOT, "1");
+  figma.currentPage.appendChild(root);
+  const frames = figma.currentPage.children.filter(isDeckFrame);
+  let minX = 0;
+  let bottom = 0;
+  if (frames.length) {
+    minX = Infinity;
+    bottom = -Infinity;
+    for (const f of frames) {
+      minX = Math.min(minX, f.x);
+      bottom = Math.max(bottom, f.y + f.height);
+    }
+  }
+  root.x = minX;
+  root.y = bottom + 360;
+  root.resizeWithoutConstraints(900, 220);
+  return root;
+}
+
+// Locate a parent's child section anywhere on the page (handles migration).
+function findBranchSection(parentId: string): SectionNode | null {
+  let found: SectionNode | null = null;
+  const walk = (node: ChildrenMixin): void => {
+    for (const child of node.children) {
+      if (found) return;
+      if (child.type === "SECTION") {
+        if (child.getPluginData(BRANCH_SECTION) === parentId) {
+          found = child;
+          return;
+        }
+        walk(child);
+      }
+    }
+  };
+  walk(figma.currentPage);
+  return found;
+}
+
+// The per-screen child section that lives inside the branch root.
+function ensureBranchSection(parent: DeckFrame): SectionNode {
+  const root = ensureBranchRoot();
+  const existing = findBranchSection(parent.id);
+  if (existing) {
+    if (existing.parent !== root) root.appendChild(existing); // migrate under root
+    return existing;
   }
   const sec = figma.createSection();
   sec.name = "Branches \u00b7 " + parent.name;
   sec.setPluginData(BRANCH_SECTION, parent.id);
-  figma.currentPage.appendChild(sec);
-  sec.x = parent.x;
-  sec.y = parent.y + parent.height + 240;
+  root.appendChild(sec);
+  // Stack this child section below any existing siblings, inside the root.
+  let top = root.y + SEC_PAD;
+  for (const c of root.children) {
+    if (c !== sec && c.type === "SECTION") top = Math.max(top, c.y + c.height + SEC_GAP);
+  }
+  sec.x = root.x + SEC_PAD;
+  sec.y = top;
+  sec.resizeWithoutConstraints(Math.max(parent.width + SEC_PAD * 2, 480), parent.height + SEC_PAD * 2);
+  reflowBranchRoot(root);
   return sec;
 }
 
-function nextBranchSpot(sec: SectionNode, parent: DeckFrame): { x: number; y: number } {
-  const kids = sec.children;
-  if (!kids.length) return { x: parent.x, y: parent.y + parent.height + 240 };
+// Next free slot for a clone inside a child section (clones grow rightward).
+function nextBranchSpot(sec: SectionNode): { x: number; y: number } {
+  const clones = sec.children.filter((k) => k.getPluginData(BRANCH_MARK) === "1");
+  const y = sec.y + SEC_PAD;
+  if (!clones.length) return { x: sec.x + SEC_PAD, y };
   let maxRight = -Infinity;
-  let top = Infinity;
-  for (const k of kids) {
-    maxRight = Math.max(maxRight, k.x + k.width);
-    top = Math.min(top, k.y);
-  }
-  return { x: maxRight + 80, y: top };
+  for (const k of clones) maxRight = Math.max(maxRight, k.x + k.width);
+  return { x: maxRight + SEC_GAP, y };
 }
 
+// Grow a child section to wrap its clones (anchored at its own top-left).
 function reflowBranchSection(sec: SectionNode): void {
-  const kids = sec.children;
-  if (!kids.length) return;
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const k of kids) {
-    minX = Math.min(minX, k.x);
-    minY = Math.min(minY, k.y);
-    maxX = Math.max(maxX, k.x + k.width);
-    maxY = Math.max(maxY, k.y + k.height);
+  const clones = sec.children.filter((k) => k.getPluginData(BRANCH_MARK) === "1");
+  if (!clones.length) return;
+  let maxRight = -Infinity;
+  let maxBottom = -Infinity;
+  for (const k of clones) {
+    maxRight = Math.max(maxRight, k.x + k.width);
+    maxBottom = Math.max(maxBottom, k.y + k.height);
   }
-  const pad = 60;
-  const topRoom = 48; // breathing room for the section title
-  sec.x = minX - pad;
-  sec.y = minY - pad - topRoom;
-  sec.resizeWithoutConstraints(maxX - minX + pad * 2, maxY - minY + pad * 2 + topRoom);
+  sec.resizeWithoutConstraints(Math.max(maxRight + SEC_PAD - sec.x, 480), Math.max(maxBottom + SEC_PAD - sec.y, 240));
+}
+
+// Grow the root section to wrap every child section (no reposition of kids).
+function reflowBranchRoot(root: SectionNode): void {
+  if (!root.children.length) return;
+  let maxRight = -Infinity;
+  let maxBottom = -Infinity;
+  for (const k of root.children) {
+    maxRight = Math.max(maxRight, k.x + k.width);
+    maxBottom = Math.max(maxBottom, k.y + k.height);
+  }
+  root.resizeWithoutConstraints(Math.max(maxRight + SEC_PAD - root.x, 600), Math.max(maxBottom + SEC_PAD - root.y, 220));
 }
 
 async function drawBranchLink(parent: DeckFrame, branch: SceneNode): Promise<void> {
@@ -1191,7 +1264,7 @@ export async function branchFrame(parentId: string): Promise<{ id: string; name:
   }
   const p = parent as DeckFrame;
   const sec = ensureBranchSection(p);
-  const spot = nextBranchSpot(sec, p);
+  const spot = nextBranchSpot(sec);
   const clone = p.clone();
   clone.setPluginData(BRANCH_MARK, "1");
   clone.setPluginData(BRANCH_OF, parentId);
@@ -1201,6 +1274,7 @@ export async function branchFrame(parentId: string): Promise<{ id: string; name:
   clone.x = spot.x;
   clone.y = spot.y;
   reflowBranchSection(sec);
+  reflowBranchRoot(ensureBranchRoot());
   existing.push(clone.id);
   p.setPluginData(BRANCH_IDS, JSON.stringify(existing));
   await drawBranchLink(p, clone);
@@ -1254,11 +1328,16 @@ export async function removeBranch(branchId: string): Promise<string> {
 }
 
 function cleanupEmptyBranchSections(): void {
-  for (const c of figma.currentPage.children) {
-    if (c.type !== "SECTION" || !c.getPluginData(BRANCH_SECTION)) continue;
-    const hasBranch = c.children.some((k) => k.getPluginData(BRANCH_MARK) === "1");
-    if (!hasBranch) c.remove();
+  const root = findBranchRoot();
+  if (!root) return;
+  for (const c of root.children.slice()) {
+    if (c.type === "SECTION" && c.getPluginData(BRANCH_SECTION)) {
+      const hasBranch = c.children.some((k) => k.getPluginData(BRANCH_MARK) === "1");
+      if (!hasBranch) c.remove();
+    }
   }
+  if (!root.children.some((c) => c.type === "SECTION")) root.remove();
+  else reflowBranchRoot(root);
 }
 
 // ---------------------------------------------------------------------------
