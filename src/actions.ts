@@ -483,6 +483,382 @@ export async function removeBrokenConnections(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// Morph Inspector — compare two frames, layer by layer
+// ---------------------------------------------------------------------------
+
+export interface LayerDiff {
+  name: string;
+  type: string;
+  status: "moved" | "exit" | "enter";
+  aId: string | null;
+  bId: string | null;
+  dx: number;
+  dy: number;
+  dw: number;
+  dh: number;
+  opacityFrom: number;
+  opacityTo: number;
+  hidden: boolean;
+}
+
+export interface RenameSuggestion {
+  bId: string;
+  bName: string;
+  toName: string;
+  reason: string;
+}
+
+export interface MorphReport {
+  ok: boolean;
+  message?: string;
+  fromName?: string;
+  toName?: string;
+  moved?: LayerDiff[];
+  exits?: LayerDiff[];
+  enters?: LayerDiff[];
+  staticCount?: number;
+  suggestions?: RenameSuggestion[];
+}
+
+interface RelBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface UnmatchedInfo {
+  id: string;
+  name: string;
+  type: string;
+  box: RelBox | null;
+}
+
+const MORPH_GUIDE_MARK = "luma-morph-guides";
+
+function pushToMap(map: Map<string, SceneNode[]>, key: string, node: SceneNode): void {
+  const list = map.get(key);
+  if (list) list.push(node);
+  else map.set(key, [node]);
+}
+
+function relBox(node: SceneNode, frame: DeckFrame): RelBox | null {
+  const nb = node.absoluteBoundingBox;
+  const fb = frame.absoluteBoundingBox;
+  if (!nb || !fb) return null;
+  return { x: nb.x - fb.x, y: nb.y - fb.y, w: nb.width, h: nb.height };
+}
+
+function nodeOpacity(node: SceneNode): number {
+  const o = (node as { opacity?: number }).opacity;
+  return typeof o === "number" ? o : 1;
+}
+
+function absCenter(node: SceneNode): { x: number; y: number } | null {
+  const bb = node.absoluteBoundingBox;
+  if (!bb) return null;
+  return { x: bb.x + bb.width / 2, y: bb.y + bb.height / 2 };
+}
+
+function twoFramesFromSelection(): [DeckFrame, DeckFrame] | null {
+  const frames = orderFrames(collectFrames(figma.currentPage.selection), "position");
+  if (frames.length !== 2) return null;
+  return [frames[0], frames[1]];
+}
+
+function buildRenameSuggestions(exitNodes: UnmatchedInfo[], enterNodes: UnmatchedInfo[]): RenameSuggestion[] {
+  const out: RenameSuggestion[] = [];
+  const usedB = new Set<string>();
+  for (const ex of exitNodes) {
+    if (!ex.box) continue;
+    const exC = { x: ex.box.x + ex.box.w / 2, y: ex.box.y + ex.box.h / 2 };
+    let best: UnmatchedInfo | null = null;
+    let bestDist = Infinity;
+    for (const en of enterNodes) {
+      if (en.type !== ex.type || usedB.has(en.id) || !en.box) continue;
+      const enC = { x: en.box.x + en.box.w / 2, y: en.box.y + en.box.h / 2 };
+      const dist = Math.hypot(enC.x - exC.x, enC.y - exC.y);
+      const sizeOk =
+        Math.abs(en.box.w - ex.box.w) < ex.box.w * 0.6 + 24 &&
+        Math.abs(en.box.h - ex.box.h) < ex.box.h * 0.6 + 24;
+      if (dist < bestDist && dist < 220 && sizeOk) {
+        best = en;
+        bestDist = dist;
+      }
+    }
+    if (best) {
+      usedB.add(best.id);
+      out.push({ bId: best.id, bName: best.name, toName: ex.name, reason: "Same type, near position" });
+    }
+  }
+  return out;
+}
+
+export async function analyzeMorph(): Promise<MorphReport> {
+  const pair = twoFramesFromSelection();
+  if (!pair) return { ok: false, message: "Select exactly 2 frames to compare." };
+  const [a, b] = pair;
+
+  const mapA = new Map<string, SceneNode[]>();
+  const mapB = new Map<string, SceneNode[]>();
+  for (const n of a.findAll(() => true)) pushToMap(mapA, n.type + "::" + n.name, n);
+  for (const n of b.findAll(() => true)) pushToMap(mapB, n.type + "::" + n.name, n);
+
+  const moved: LayerDiff[] = [];
+  const exits: LayerDiff[] = [];
+  const enters: LayerDiff[] = [];
+  const exitNodes: UnmatchedInfo[] = [];
+  const enterNodes: UnmatchedInfo[] = [];
+  let staticCount = 0;
+
+  const keys = new Set<string>();
+  for (const k of mapA.keys()) keys.add(k);
+  for (const k of mapB.keys()) keys.add(k);
+
+  for (const key of keys) {
+    const la = mapA.get(key) || [];
+    const lb = mapB.get(key) || [];
+    const paired = Math.min(la.length, lb.length);
+    for (let i = 0; i < paired; i++) {
+      const na = la[i];
+      const nb = lb[i];
+      const ra = relBox(na, a);
+      const rb = relBox(nb, b);
+      const oa = nodeOpacity(na);
+      const ob = nodeOpacity(nb);
+      const dx = ra && rb ? Math.round(rb.x - ra.x) : 0;
+      const dy = ra && rb ? Math.round(rb.y - ra.y) : 0;
+      const dw = ra && rb ? Math.round(rb.w - ra.w) : 0;
+      const dh = ra && rb ? Math.round(rb.h - ra.h) : 0;
+      const changed = dx !== 0 || dy !== 0 || dw !== 0 || dh !== 0 || Math.abs(oa - ob) > 0.001;
+      const hidden = oa === 0 || ob === 0 || !na.visible || !nb.visible;
+      if (changed) {
+        moved.push({ name: na.name, type: na.type, status: "moved", aId: na.id, bId: nb.id, dx, dy, dw, dh, opacityFrom: oa, opacityTo: ob, hidden });
+      } else {
+        staticCount++;
+      }
+    }
+    for (let i = paired; i < la.length; i++) {
+      const na = la[i];
+      const oa = nodeOpacity(na);
+      exits.push({ name: na.name, type: na.type, status: "exit", aId: na.id, bId: null, dx: 0, dy: 0, dw: 0, dh: 0, opacityFrom: oa, opacityTo: 0, hidden: oa === 0 || !na.visible });
+      exitNodes.push({ id: na.id, name: na.name, type: na.type, box: relBox(na, a) });
+    }
+    for (let i = paired; i < lb.length; i++) {
+      const nb = lb[i];
+      const ob = nodeOpacity(nb);
+      enters.push({ name: nb.name, type: nb.type, status: "enter", aId: null, bId: nb.id, dx: 0, dy: 0, dw: 0, dh: 0, opacityFrom: 0, opacityTo: ob, hidden: ob === 0 || !nb.visible });
+      enterNodes.push({ id: nb.id, name: nb.name, type: nb.type, box: relBox(nb, b) });
+    }
+  }
+
+  return {
+    ok: true,
+    fromName: a.name,
+    toName: b.name,
+    moved,
+    exits,
+    enters,
+    staticCount,
+    suggestions: buildRenameSuggestions(exitNodes, enterNodes),
+  };
+}
+
+export async function selectLayers(ids: string[]): Promise<void> {
+  const nodes: SceneNode[] = [];
+  for (const id of ids) {
+    const n = await figma.getNodeByIdAsync(id);
+    if (n && "type" in n && n.type !== "PAGE" && n.type !== "DOCUMENT") nodes.push(n as SceneNode);
+  }
+  if (nodes.length) {
+    figma.currentPage.selection = nodes;
+    figma.viewport.scrollAndZoomIntoView(nodes);
+  }
+}
+
+export async function renameLayer(id: string, name: string): Promise<string> {
+  const node = await figma.getNodeByIdAsync(id);
+  if (!node || !("name" in node)) throw new Error("Layer not found.");
+  (node as SceneNode).name = name;
+  return `Renamed layer to "${name}".`;
+}
+
+function makeLine(p1: { x: number; y: number }, p2: { x: number; y: number }, color: RGB): RectangleNode {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const len = Math.max(Math.hypot(dx, dy), 1);
+  const cos = dx / len;
+  const sin = dy / len;
+  const r = figma.createRectangle();
+  r.resize(len, 2);
+  r.cornerRadius = 1;
+  r.fills = [{ type: "SOLID", color }];
+  // Place local origin at p1 and point the length toward p2.
+  r.relativeTransform = [
+    [cos, -sin, p1.x],
+    [sin, cos, p1.y],
+  ];
+  return r;
+}
+
+function makeDot(p: { x: number; y: number }, color: RGB): EllipseNode {
+  const e = figma.createEllipse();
+  e.resize(9, 9);
+  e.x = p.x - 4.5;
+  e.y = p.y - 4.5;
+  e.fills = [{ type: "SOLID", color }];
+  return e;
+}
+
+function makeRing(p: { x: number; y: number }, color: RGB): EllipseNode {
+  const e = figma.createEllipse();
+  e.resize(13, 13);
+  e.x = p.x - 6.5;
+  e.y = p.y - 6.5;
+  e.fills = [];
+  e.strokes = [{ type: "SOLID", color }];
+  e.strokeWeight = 2;
+  return e;
+}
+
+export async function clearMorphGuides(): Promise<string> {
+  let removed = 0;
+  for (const c of figma.currentPage.children) {
+    if (c.getPluginData(MORPH_GUIDE_MARK) === "1") {
+      c.remove();
+      removed++;
+    }
+  }
+  return removed ? "Cleared morph guides." : "No morph guides to clear.";
+}
+
+export async function drawMorphGuides(): Promise<string> {
+  const report = await analyzeMorph();
+  if (!report.ok) throw new Error(report.message || "Select 2 frames.");
+  await clearMorphGuides();
+
+  const MOVED: RGB = { r: 0.05, g: 0.6, b: 1 };
+  const EXIT: RGB = { r: 0.95, g: 0.28, b: 0.13 };
+  const ENTER: RGB = { r: 0.18, g: 0.78, b: 0.44 };
+  const created: SceneNode[] = [];
+  const all = [...(report.moved || []), ...(report.exits || []), ...(report.enters || [])];
+
+  for (const d of all) {
+    const aNode = d.aId ? ((await figma.getNodeByIdAsync(d.aId)) as SceneNode | null) : null;
+    const bNode = d.bId ? ((await figma.getNodeByIdAsync(d.bId)) as SceneNode | null) : null;
+    const color = d.status === "moved" ? MOVED : d.status === "exit" ? EXIT : ENTER;
+    if (aNode && bNode) {
+      const ca = absCenter(aNode);
+      const cb = absCenter(bNode);
+      if (ca && cb) {
+        created.push(makeLine(ca, cb, color));
+        created.push(makeDot(cb, color));
+      }
+    } else if (aNode) {
+      const ca = absCenter(aNode);
+      if (ca) created.push(makeRing(ca, color));
+    } else if (bNode) {
+      const cb = absCenter(bNode);
+      if (cb) created.push(makeDot(cb, color));
+    }
+  }
+
+  if (!created.length) throw new Error("Nothing to visualize between these frames.");
+  const group = figma.group(created, figma.currentPage);
+  group.name = "Luma Morph Guides";
+  group.setPluginData(MORPH_GUIDE_MARK, "1");
+  group.locked = true;
+  return `Drew ${created.length} guide marks (blue = moves, red = exits, green = enters).`;
+}
+
+// ---------------------------------------------------------------------------
+// Organize connected screens — cluster a main screen with its auxiliaries
+// ---------------------------------------------------------------------------
+
+export interface OrganizeOptions {
+  gap: number;
+  clusterGap: number;
+}
+
+export async function organizeConnected(opts: OrganizeOptions): Promise<string> {
+  const frames = collectFrames([]);
+  if (frames.length < 2) throw new Error("Need at least 2 connected frames.");
+
+  const idToFrame = new Map<string, DeckFrame>();
+  for (const f of frames) idToFrame.set(f.id, f);
+
+  const adj = new Map<string, Set<string>>();
+  const outDeg = new Map<string, number>();
+  for (const f of frames) {
+    adj.set(f.id, new Set());
+    outDeg.set(f.id, 0);
+  }
+  for (const f of frames) {
+    for (const r of f.reactions) {
+      for (const act of reactionActions(r)) {
+        if (act.type === "NODE" && act.destinationId && act.destinationId !== f.id && idToFrame.has(act.destinationId)) {
+          adj.get(f.id)!.add(act.destinationId);
+          adj.get(act.destinationId)!.add(f.id);
+          outDeg.set(f.id, (outDeg.get(f.id) || 0) + 1);
+        }
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  const clusters: string[][] = [];
+  for (const f of frames) {
+    if (seen.has(f.id)) continue;
+    const stack = [f.id];
+    const comp: string[] = [];
+    seen.add(f.id);
+    while (stack.length) {
+      const id = stack.pop()!;
+      comp.push(id);
+      for (const nb of adj.get(id)!) {
+        if (!seen.has(nb)) {
+          seen.add(nb);
+          stack.push(nb);
+        }
+      }
+    }
+    if (comp.length >= 2) clusters.push(comp);
+  }
+
+  if (!clusters.length) {
+    throw new Error("No connected screen groups found. Connect a main screen to its states first.");
+  }
+
+  const baseX = Math.min(...frames.map((f) => f.x));
+  let cursorY = Math.min(...frames.map((f) => f.y));
+
+  for (const comp of clusters) {
+    const mainId = comp
+      .slice()
+      .sort((p, q) => (outDeg.get(q)! - outDeg.get(p)!) || (idToFrame.get(p)!.x - idToFrame.get(q)!.x))[0];
+    const main = idToFrame.get(mainId)!;
+    const aux = comp.filter((id) => id !== mainId).map((id) => idToFrame.get(id)!);
+
+    main.x = baseX;
+    main.y = cursorY;
+
+    const auxX = baseX + main.width + opts.gap;
+    let auxY = cursorY;
+    for (const a of aux) {
+      a.x = auxX;
+      a.y = auxY;
+      auxY += a.height + opts.gap;
+    }
+
+    const auxTotal = aux.length ? auxY - cursorY - opts.gap : 0;
+    const clusterHeight = Math.max(main.height, auxTotal);
+    cursorY += clusterHeight + opts.clusterGap;
+  }
+
+  return `Organized ${clusters.length} connected group${clusters.length > 1 ? "s" : ""}.`;
+}
+
+// ---------------------------------------------------------------------------
 // Selection info for the UI
 // ---------------------------------------------------------------------------
 

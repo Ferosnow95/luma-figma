@@ -6,19 +6,28 @@
   <title>Luma</title>
   <style>
     :root {
-      --bg: #0d0d12;
-      --glass: rgba(255, 255, 255, 0.045);
-      --glass-strong: rgba(255, 255, 255, 0.08);
-      --stroke: rgba(255, 255, 255, 0.09);
-      --stroke-soft: rgba(255, 255, 255, 0.06);
-      --text: #ededf2;
-      --muted: #8c8c9c;
-      --accent: #7c5cff;
-      --accent-2: #29d4c0;
-      --danger: #ff5a6a;
-      --radius: 12px;
-      --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-      font-size: 13px;
+      /* Figma design-system tokens (injected via showUI themeColors:true) with fallbacks */
+      --bg: var(--figma-color-bg, #2c2c2c);
+      --bg-secondary: var(--figma-color-bg-secondary, #383838);
+      --bg-tertiary: var(--figma-color-bg-tertiary, #4b4b4b);
+      --bg-hover: var(--figma-color-bg-hover, rgba(255, 255, 255, 0.06));
+      --brand: var(--figma-color-bg-brand, #0d99ff);
+      --brand-hover: var(--figma-color-bg-brand-hover, #007be5);
+      --onbrand: var(--figma-color-text-onbrand, #ffffff);
+      --text: var(--figma-color-text, #ffffff);
+      --muted: var(--figma-color-text-secondary, #a3a3a3);
+      --stroke: var(--figma-color-border, rgba(255, 255, 255, 0.13));
+      --stroke-soft: var(--figma-color-border, rgba(255, 255, 255, 0.08));
+      --danger: var(--figma-color-bg-danger, #f24822);
+      --success: var(--figma-color-bg-success, #14ae5c);
+      /* aliases kept so existing rules resolve */
+      --glass: var(--bg-secondary);
+      --glass-strong: var(--bg-tertiary);
+      --accent: var(--brand);
+      --accent-2: var(--brand);
+      --radius: 8px;
+      --shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+      font-size: 12px;
     }
 
     * { box-sizing: border-box; }
@@ -33,188 +42,194 @@
       overflow: hidden;
     }
 
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      background:
-        radial-gradient(620px 360px at 12% -8%, rgba(124, 92, 255, 0.22), transparent 60%),
-        radial-gradient(520px 320px at 108% 8%, rgba(41, 212, 192, 0.16), transparent 60%);
-      pointer-events: none;
-      z-index: 0;
-    }
-
     .app { position: relative; z-index: 1; display: flex; height: 100vh; }
 
     /* ---- left icon rail ---- */
     .rail {
-      width: 56px;
-      flex: 0 0 56px;
+      width: 52px;
+      flex: 0 0 52px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 6px;
-      padding: 12px 0;
-      border-right: 1px solid var(--stroke-soft);
-      background: rgba(0, 0, 0, 0.18);
+      gap: 2px;
+      padding: 10px 0;
+      border-right: 1px solid var(--stroke);
+      background: var(--bg-secondary);
     }
     .rail .logo {
-      width: 26px; height: 26px; margin-bottom: 8px; border-radius: 8px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      box-shadow: 0 4px 14px rgba(124, 92, 255, 0.5);
+      width: 24px; height: 24px; margin-bottom: 8px; border-radius: 6px;
+      background: var(--brand);
     }
     .rail button {
-      width: 40px; height: 40px; border: 0; border-radius: 10px;
+      width: 38px; height: 36px; border: 0; border-radius: 6px;
       background: transparent; color: var(--muted); cursor: pointer;
       display: flex; align-items: center; justify-content: center;
-      transition: background 0.15s, color 0.15s, transform 0.1s;
+      transition: background 0.12s, color 0.12s;
     }
-    .rail button svg { width: 18px; height: 18px; }
-    .rail button:hover { background: var(--glass); color: var(--text); }
+    .rail button svg { width: 17px; height: 17px; }
+    .rail button:hover { background: var(--bg-hover); color: var(--text); }
     .rail button.active {
-      color: #fff;
-      background: linear-gradient(135deg, rgba(124, 92, 255, 0.32), rgba(41, 212, 192, 0.22));
-      box-shadow: inset 0 0 0 1px var(--stroke);
+      color: var(--brand);
+      background: var(--bg-tertiary);
     }
 
     /* ---- main column ---- */
     .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
     header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 16px 10px;
+      padding: 13px 16px 9px;
     }
-    header .title { font-size: 15px; font-weight: 650; letter-spacing: 0.2px; }
+    header .title { font-size: 14px; font-weight: 600; letter-spacing: 0.1px; }
     header .sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
     .badge {
-      font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 20px;
-      background: var(--glass-strong); border: 1px solid var(--stroke); color: var(--text);
+      font-size: 11px; font-weight: 500; padding: 4px 9px; border-radius: 6px;
+      background: var(--bg-secondary); border: 1px solid var(--stroke); color: var(--text);
       white-space: nowrap;
     }
-    .badge .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); margin-right: 6px; }
+    .badge .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); margin-right: 6px; }
 
     .views { flex: 1; overflow-y: auto; padding: 4px 16px 16px; }
-    .views::-webkit-scrollbar { width: 8px; }
-    .views::-webkit-scrollbar-thumb { background: var(--stroke); border-radius: 8px; }
+    .views::-webkit-scrollbar { width: 9px; }
+    .views::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--bg); }
 
-    .view { display: none; animation: fade 0.18s ease; }
+    .view { display: none; }
     .view.active { display: block; }
-    @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
     .card {
-      background: var(--glass);
+      background: var(--bg-secondary);
       border: 1px solid var(--stroke);
       border-radius: var(--radius);
-      padding: 14px;
-      margin-bottom: 12px;
-      backdrop-filter: blur(8px);
+      padding: 13px;
+      margin-bottom: 10px;
     }
-    .card h3 { margin: 0 0 2px; font-size: 13px; font-weight: 650; }
-    .card p.hint { margin: 0 0 12px; font-size: 11px; color: var(--muted); line-height: 1.4; }
+    .card h3 { margin: 0 0 2px; font-size: 12px; font-weight: 600; display: flex; align-items: center; }
+    .card p.hint { margin: 0 0 12px; font-size: 11px; color: var(--muted); line-height: 1.45; }
 
-    label.row { display: block; font-size: 11px; color: var(--muted); margin: 12px 0 6px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; }
+    label.row { display: block; font-size: 10px; color: var(--muted); margin: 12px 0 6px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; }
     label.row:first-of-type { margin-top: 0; }
 
     /* segmented control */
-    .seg { display: flex; gap: 4px; background: rgba(0,0,0,0.25); border: 1px solid var(--stroke-soft); border-radius: 10px; padding: 3px; }
+    .seg { display: flex; gap: 2px; background: var(--bg); border: 1px solid var(--stroke); border-radius: 7px; padding: 2px; }
     .seg button {
       flex: 1; border: 0; background: transparent; color: var(--muted); cursor: pointer;
-      padding: 7px 4px; border-radius: 7px; font-size: 12px; font-weight: 550; transition: 0.15s;
+      padding: 6px 4px; border-radius: 5px; font-size: 11px; font-weight: 500; transition: 0.12s;
     }
     .seg button:hover { color: var(--text); }
-    .seg button.active { background: var(--glass-strong); color: #fff; box-shadow: inset 0 0 0 1px var(--stroke); }
+    .seg button.active { background: var(--bg-tertiary); color: var(--text); }
 
     /* chips */
     .chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .chips button {
-      border: 1px solid var(--stroke-soft); background: rgba(255,255,255,0.03); color: var(--muted);
-      padding: 6px 11px; border-radius: 20px; font-size: 12px; cursor: pointer; transition: 0.15s; font-weight: 550;
+      border: 1px solid var(--stroke); background: var(--bg); color: var(--muted);
+      padding: 6px 11px; border-radius: 6px; font-size: 11px; cursor: pointer; transition: 0.12s; font-weight: 500;
     }
-    .chips button:hover { color: var(--text); border-color: var(--stroke); }
-    .chips button.active { color: #fff; border-color: transparent; background: linear-gradient(135deg, var(--accent), #6a7bff); }
+    .chips button:hover { color: var(--text); border-color: var(--brand); }
+    .chips button.active { color: var(--onbrand); border-color: transparent; background: var(--brand); }
 
     select, input[type="number"], input[type="text"] {
-      width: 100%; background: rgba(0,0,0,0.28); border: 1px solid var(--stroke-soft);
-      color: var(--text); border-radius: 9px; padding: 8px 10px; font-size: 12px; font-family: inherit;
+      width: 100%; background: var(--bg); border: 1px solid var(--stroke);
+      color: var(--text); border-radius: 6px; padding: 8px 9px; font-size: 11px; font-family: inherit;
     }
-    select:focus, input:focus { outline: none; border-color: var(--accent); }
+    select:focus, input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
 
     .range { display: flex; align-items: center; gap: 10px; }
-    input[type="range"] { -webkit-appearance: none; flex: 1; height: 4px; border-radius: 4px; background: var(--stroke); }
+    input[type="range"] { -webkit-appearance: none; flex: 1; height: 4px; border-radius: 4px; background: var(--bg-tertiary); }
     input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
-      background: #fff; box-shadow: 0 0 0 4px rgba(124,92,255,0.3); cursor: pointer;
+      -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+      background: #fff; border: 1px solid rgba(0,0,0,0.2); box-shadow: 0 1px 2px rgba(0,0,0,0.3); cursor: pointer;
     }
-    .range .val { width: 58px; text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .range .val { width: 58px; text-align: right; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-    .switch { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; }
-    .switch span { font-size: 12.5px; }
-    .switch small { display: block; color: var(--muted); font-size: 11px; }
-    .toggle { position: relative; width: 38px; height: 22px; flex: 0 0 38px; border-radius: 22px; background: rgba(255,255,255,0.12); cursor: pointer; transition: 0.18s; }
-    .toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: 0.18s; }
-    .toggle.on { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
-    .toggle.on::after { left: 19px; }
+    .switch { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+    .switch span { font-size: 12px; }
+    .switch small { display: block; color: var(--muted); font-size: 11px; margin-top: 1px; }
+    .toggle { position: relative; width: 36px; height: 20px; flex: 0 0 36px; border-radius: 20px; background: var(--bg-tertiary); cursor: pointer; transition: 0.16s; }
+    .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: 0.16s; }
+    .toggle.on { background: var(--brand); }
+    .toggle.on::after { left: 18px; }
 
     .two { display: flex; gap: 10px; }
     .two > div { flex: 1; }
 
     .primary {
-      width: 100%; border: 0; cursor: pointer; color: #fff; font-weight: 650; font-size: 13px;
-      padding: 12px; border-radius: 11px; margin-top: 4px;
-      background: linear-gradient(135deg, var(--accent), #5a6dff);
-      box-shadow: 0 8px 22px rgba(124, 92, 255, 0.4);
-      transition: transform 0.1s, filter 0.15s;
+      width: 100%; border: 0; cursor: pointer; color: var(--onbrand); font-weight: 600; font-size: 12px;
+      padding: 11px; border-radius: 7px; margin-top: 4px;
+      background: var(--brand);
+      transition: background 0.12s, transform 0.08s;
     }
-    .primary:hover { filter: brightness(1.08); }
+    .primary:hover { background: var(--brand-hover); }
     .primary:active { transform: translateY(1px); }
     .ghost {
-      width: 100%; border: 1px solid var(--stroke); cursor: pointer; color: var(--text); font-weight: 600;
-      padding: 10px; border-radius: 10px; background: var(--glass); font-size: 12.5px; transition: 0.15s;
+      width: 100%; border: 1px solid var(--stroke); cursor: pointer; color: var(--text); font-weight: 500;
+      padding: 9px; border-radius: 7px; background: var(--bg-secondary); font-size: 12px; transition: 0.12s;
     }
-    .ghost:hover { background: var(--glass-strong); }
+    .ghost:hover { background: var(--bg-tertiary); }
 
     /* flow chips preview */
-    .flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 30px; }
+    .flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 28px; }
     .flow .slide {
-      background: var(--glass-strong); border: 1px solid var(--stroke); border-radius: 8px;
+      background: var(--bg); border: 1px solid var(--stroke); border-radius: 6px;
       padding: 5px 9px; font-size: 11px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .flow .arrow { color: var(--accent); font-size: 12px; }
+    .flow .arrow { color: var(--brand); font-size: 12px; }
     .flow .empty { color: var(--muted); font-size: 11px; }
 
     /* bezier studio */
     .studio { display: flex; gap: 14px; align-items: flex-start; }
     .curvebox { flex: 0 0 168px; }
-    .curve-svg { width: 168px; height: 168px; background: rgba(0,0,0,0.3); border: 1px solid var(--stroke-soft); border-radius: 10px; touch-action: none; }
-    .curve-svg .grid { stroke: rgba(255,255,255,0.06); stroke-width: 0.5; }
-    .curve-svg .guide { stroke: rgba(255,255,255,0.14); stroke-width: 0.6; stroke-dasharray: 2 2; }
-    .curve-svg .curve { stroke: url(#g); stroke-width: 2.4; fill: none; }
-    .curve-svg .handle-line { stroke: rgba(255,255,255,0.25); stroke-width: 1; }
-    .curve-svg .handle { fill: #fff; stroke: var(--accent); stroke-width: 2; cursor: grab; }
+    .curve-svg { width: 168px; height: 168px; background: var(--bg); border: 1px solid var(--stroke); border-radius: 8px; touch-action: none; }
+    .curve-svg .grid { stroke: var(--stroke); stroke-width: 0.5; }
+    .curve-svg .guide { stroke: var(--muted); stroke-width: 0.6; stroke-dasharray: 2 2; opacity: 0.5; }
+    .curve-svg .curve { stroke: var(--brand); stroke-width: 2.4; fill: none; }
+    .curve-svg .handle-line { stroke: var(--muted); stroke-width: 1; opacity: 0.6; }
+    .curve-svg .handle { fill: #fff; stroke: var(--brand); stroke-width: 2; cursor: grab; }
     .studio .meta { flex: 1; min-width: 0; }
     .bez-val { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--muted); margin: 0 0 10px; }
-    .preview-track { position: relative; height: 30px; background: rgba(0,0,0,0.3); border: 1px solid var(--stroke-soft); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
-    .preview-ball { position: absolute; top: 7px; left: 6px; width: 14px; height: 14px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+    .preview-track { position: relative; height: 30px; background: var(--bg); border: 1px solid var(--stroke); border-radius: 7px; margin-bottom: 8px; overflow: hidden; }
+    .preview-ball { position: absolute; top: 7px; left: 6px; width: 14px; height: 14px; border-radius: 50%; background: var(--brand); }
 
     .soon { opacity: 0.55; }
-    .soon-tag { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; color: var(--muted); border: 1px solid var(--stroke); border-radius: 10px; padding: 1px 6px; margin-left: 8px; }
+    .soon-tag { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; color: var(--muted); border: 1px solid var(--stroke); border-radius: 6px; padding: 1px 6px; margin-left: 8px; }
 
-    .connlist { max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
-    .connlist::-webkit-scrollbar { width: 8px; }
-    .connlist::-webkit-scrollbar-thumb { background: var(--stroke); border-radius: 8px; }
-    .connlist .empty { color: var(--muted); font-size: 11px; }
-    .conn { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--stroke-soft); border-radius: 9px; background: rgba(255,255,255,0.03); font-size: 12px; }
-    .conn.broken { border-color: rgba(255,90,106,0.5); }
+    .connlist, .difflist { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+    .connlist::-webkit-scrollbar, .difflist::-webkit-scrollbar { width: 9px; }
+    .connlist::-webkit-scrollbar-thumb, .difflist::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--bg-secondary); }
+    .connlist .empty, .difflist .empty { color: var(--muted); font-size: 11px; }
+    .conn { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--bg); font-size: 12px; }
+    .conn.broken { border-color: var(--danger); }
     .conn .pair { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .conn .meta { color: var(--muted); font-size: 10.5px; white-space: nowrap; flex: 0 0 auto; }
     .conn.broken .meta { color: var(--danger); }
-    .ghost.danger { border-color: rgba(255,90,106,0.5); color: #ff9aa4; }
-    .ghost.danger:hover { background: rgba(255,90,106,0.12); }
+    .ghost.danger { border-color: var(--danger); color: var(--danger); }
+    .ghost.danger:hover { background: var(--danger); color: #fff; }
+
+    /* morph diff rows */
+    .diff { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--bg); cursor: pointer; transition: 0.12s; }
+    .diff:hover { border-color: var(--brand); }
+    .diff .pill { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
+    .diff .pill.moved { background: var(--brand); }
+    .diff .pill.exit { background: var(--danger); }
+    .diff .pill.enter { background: var(--success); }
+    .diff .info { flex: 1; min-width: 0; }
+    .diff .nm { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .diff .dl { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 1px; }
+    .diff .ty { flex: 0 0 auto; font-size: 9.5px; color: var(--muted); text-transform: lowercase; }
+    .diff.hid .nm::after { content: " · hidden"; color: var(--danger); font-size: 10px; }
+    .sugg { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px dashed var(--stroke); border-radius: 6px; background: var(--bg); font-size: 11.5px; }
+    .sugg .txt { flex: 1; min-width: 0; overflow: hidden; }
+    .sugg .txt b { font-weight: 600; }
+    .sugg .txt small { color: var(--muted); display: block; font-size: 10px; }
+    .linkbtn { flex: 0 0 auto; border: 1px solid var(--brand); color: var(--brand); background: transparent; border-radius: 5px; padding: 4px 9px; font-size: 11px; font-weight: 600; cursor: pointer; }
+    .linkbtn:hover { background: var(--brand); color: var(--onbrand); }
+    .summary { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .summary .stat { font-size: 11px; padding: 3px 8px; border-radius: 6px; background: var(--bg); border: 1px solid var(--stroke); }
+    .summary .stat b { font-variant-numeric: tabular-nums; }
 
     footer {
-      border-top: 1px solid var(--stroke-soft); padding: 9px 16px; font-size: 11px; color: var(--muted);
-      display: flex; align-items: center; gap: 8px; min-height: 34px;
+      border-top: 1px solid var(--stroke); padding: 8px 16px; font-size: 11px; color: var(--muted);
+      display: flex; align-items: center; gap: 8px; min-height: 32px;
     }
-    footer .ok { color: var(--accent-2); }
+    footer .ok { color: var(--success); }
     footer .err { color: var(--danger); }
   </style>
 </head>
@@ -231,11 +246,17 @@
       <button data-tab="motion" title="Easing Studio">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20C9 20 9 4 21 4"/></svg>
       </button>
+      <button data-tab="morph" title="Morph Inspector">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="8" height="12" rx="1.5"/><rect x="13" y="6" width="8" height="12" rx="1.5"/><path d="M7 12h10" stroke-dasharray="2 2"/></svg>
+      </button>
       <button data-tab="numbers" title="Page Numbers">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 8l2-1v9"/><path d="M14 9a2 2 0 1 1 3 1.6L13 16h5"/></svg>
       </button>
       <button data-tab="layout" title="Layout">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="15" width="7" height="6" rx="1.5"/></svg>
+      </button>
+      <button data-tab="organize" title="Organize connected screens">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="9" height="8" rx="1.5"/><rect x="16" y="4" width="5" height="5" rx="1.2"/><rect x="16" y="15" width="5" height="5" rx="1.2"/><path d="M12 10h4M12 14h4"/></svg>
       </button>
       <button data-tab="inspect" title="Flow Inspector">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
@@ -462,15 +483,58 @@
           </div>
         </section>
 
+        <!-- MORPH -->
+        <section class="view" id="view-morph">
+          <div class="card">
+            <h3>Morph Inspector</h3>
+            <p class="hint">Select <b>two frames</b> (a "from" and a "to"). Luma matches layers by name and type, shows where each one moves, and flags layers that hide or fade out.</p>
+            <div id="morphHeader" class="flow" style="margin-bottom:10px;"><span class="empty">Select two frames to compare…</span></div>
+            <div class="summary" id="morphSummary"></div>
+            <div class="chips" id="morphFilter">
+              <button data-v="all" class="active">All</button>
+              <button data-v="moved">Moved</button>
+              <button data-v="exit">Exits</button>
+              <button data-v="enter">Enters</button>
+              <button data-v="hidden">Hidden</button>
+            </div>
+            <div id="diffList" class="difflist" style="margin-top:10px;"><span class="empty">Select two frames to compare…</span></div>
+            <div class="two" style="margin-top:12px;">
+              <button class="ghost" id="morphGuidesBtn">Show arrows</button>
+              <button class="ghost" id="morphClearBtn">Clear arrows</button>
+            </div>
+            <button class="ghost" id="morphRefreshBtn" style="margin-top:8px;">Refresh</button>
+          </div>
+          <div class="card" id="suggCard" style="display:none;">
+            <h3>Won't morph — rename to match?</h3>
+            <p class="hint">These layers look like the same object but have different names, so Smart Animate can't link them. Rename to make them morph.</p>
+            <div id="suggList" class="difflist"></div>
+          </div>
+        </section>
+
+        <!-- ORGANIZE -->
+        <section class="view" id="view-organize">
+          <div class="card">
+            <h3>Organize connected screens</h3>
+            <p class="hint">Finds groups of screens wired together (a main screen plus its hover states or sections) and tidies each group: the main screen on the left, its auxiliaries stacked to the right.</p>
+            <label class="row">Gap inside a group</label>
+            <div class="range">
+              <input type="range" id="orgGap" min="20" max="300" step="10" value="80" />
+              <span class="val" id="orgGapVal">80 px</span>
+            </div>
+            <label class="row">Gap between groups</label>
+            <div class="range">
+              <input type="range" id="orgClusterGap" min="80" max="800" step="20" value="240" />
+              <span class="val" id="orgClusterGapVal">240 px</span>
+            </div>
+          </div>
+          <button class="primary" id="organizeBtn">Organize connected screens</button>
+        </section>
+
         <!-- MORE -->
         <section class="view" id="view-more">
           <div class="card soon">
             <h3>Reorder manager <span class="soon-tag">SOON</span></h3>
             <p class="hint">Drag slide thumbnails to reorder, then renumber names Slide 01…N.</p>
-          </div>
-          <div class="card soon">
-            <h3>Morph between two frames <span class="soon-tag">SOON</span></h3>
-            <p class="hint">Auto-match layers and build a Smart Animate morph between any two frames.</p>
           </div>
           <div class="card soon">
             <h3>Table of contents <span class="soon-tag">SOON</span></h3>
@@ -504,6 +568,7 @@
       pTidy: true,
       pNumber: true,
       pConnect: true,
+      morphFilter: "all",
     };
 
     var PRESET_BEZIER = {
@@ -521,8 +586,10 @@
       flow: ["Slide Flow", "Connect slides with one click"],
       polish: ["Polish my deck", "Several fixes in one click"],
       motion: ["Easing Studio", "Design the motion curve"],
+      morph: ["Morph Inspector", "Match layers between two frames"],
       numbers: ["Page Numbers", "Number every slide"],
       layout: ["Layout", "Size & arrange your deck"],
+      organize: ["Organize Screens", "Tidy connected screen groups"],
       inspect: ["Flow Inspector", "Audit & repair connections"],
       more: ["More tools", "Coming soon"],
     };
@@ -548,6 +615,7 @@
         $("viewSub").textContent = TAB_META[tab][1];
         if (tab === "inspect") requestConnections();
         if (tab === "polish") updatePolishDesc();
+        if (tab === "morph") requestMorph();
       };
     });
 
@@ -732,6 +800,99 @@
       setStatus("Tidying…");
     };
 
+    /* ---- morph inspector ---- */
+    var morphReport = null;
+    function requestMorph() { post({ type: "morph-analyze" }); }
+    segment("morphFilter", "morphFilter", function () { renderDiffList(); });
+
+    function describeDiff(d) {
+      if (d.status === "exit") return "leaves / fades out";
+      if (d.status === "enter") return "appears / fades in";
+      var parts = [];
+      if (d.dx || d.dy) parts.push("moves " + d.dx + ", " + d.dy);
+      if (d.dw || d.dh) parts.push("resizes " + (d.dw >= 0 ? "+" : "") + d.dw + ", " + (d.dh >= 0 ? "+" : "") + d.dh);
+      if (Math.abs(d.opacityFrom - d.opacityTo) > 0.001) parts.push("opacity " + Math.round(d.opacityFrom * 100) + "\u2192" + Math.round(d.opacityTo * 100) + "%");
+      return parts.join(" \u00b7 ") || "changes";
+    }
+
+    function renderDiffList() {
+      var box = $("diffList");
+      if (!morphReport || !morphReport.ok) return;
+      var all = [].concat(morphReport.moved || [], morphReport.exits || [], morphReport.enters || []);
+      var f = state.morphFilter;
+      var items = all.filter(function (d) {
+        if (f === "all") return true;
+        if (f === "hidden") return d.hidden;
+        return d.status === f;
+      });
+      box.innerHTML = "";
+      if (!items.length) { box.innerHTML = '<span class="empty">Nothing here for this filter.</span>'; return; }
+      items.forEach(function (d) {
+        var row = document.createElement("div");
+        row.className = "diff" + (d.hidden ? " hid" : "");
+        var pill = document.createElement("div"); pill.className = "pill " + d.status;
+        var info = document.createElement("div"); info.className = "info";
+        var nm = document.createElement("div"); nm.className = "nm"; nm.textContent = d.name;
+        var dl = document.createElement("div"); dl.className = "dl"; dl.textContent = describeDiff(d);
+        info.appendChild(nm); info.appendChild(dl);
+        var ty = document.createElement("div"); ty.className = "ty"; ty.textContent = d.type.toLowerCase();
+        row.appendChild(pill); row.appendChild(info); row.appendChild(ty);
+        row.onclick = function () {
+          var ids = [d.aId, d.bId].filter(Boolean);
+          if (ids.length) { post({ type: "morph-select", options: { ids: ids } }); setStatus("Selected " + d.name, "ok"); }
+        };
+        box.appendChild(row);
+      });
+    }
+
+    function renderSuggestions(list) {
+      var card = $("suggCard"), box = $("suggList");
+      if (!list.length) { card.style.display = "none"; return; }
+      card.style.display = "block";
+      box.innerHTML = "";
+      list.forEach(function (s) {
+        var row = document.createElement("div"); row.className = "sugg";
+        var txt = document.createElement("div"); txt.className = "txt";
+        txt.innerHTML = "<b>" + esc(s.bName) + "</b> \u2192 " + esc(s.toName) + "<small>" + esc(s.reason) + "</small>";
+        var btn = document.createElement("button"); btn.className = "linkbtn"; btn.textContent = "Rename";
+        btn.onclick = function () { post({ type: "morph-rename", options: { id: s.bId, name: s.toName } }); setStatus("Renaming\u2026"); };
+        row.appendChild(txt); row.appendChild(btn); box.appendChild(row);
+      });
+    }
+
+    function renderMorph(report) {
+      morphReport = report;
+      var hdr = $("morphHeader"), sum = $("morphSummary");
+      if (!report || !report.ok) {
+        hdr.innerHTML = '<span class="empty">' + esc((report && report.message) || "Select two frames to compare\u2026") + '</span>';
+        sum.innerHTML = "";
+        $("diffList").innerHTML = '<span class="empty">Select two frames to compare\u2026</span>';
+        $("suggCard").style.display = "none";
+        return;
+      }
+      hdr.innerHTML = '<span class="slide">' + esc(report.fromName) + '</span><span class="arrow">\u2192</span><span class="slide">' + esc(report.toName) + '</span>';
+      var moved = report.moved || [], exits = report.exits || [], enters = report.enters || [];
+      sum.innerHTML =
+        '<span class="stat"><b>' + moved.length + '</b> moved</span>' +
+        '<span class="stat"><b>' + exits.length + '</b> exits</span>' +
+        '<span class="stat"><b>' + enters.length + '</b> enters</span>' +
+        '<span class="stat"><b>' + (report.staticCount || 0) + '</b> static</span>';
+      renderDiffList();
+      renderSuggestions(report.suggestions || []);
+    }
+
+    $("morphGuidesBtn").onclick = function () { post({ type: "morph-guides" }); setStatus("Drawing arrows\u2026"); };
+    $("morphClearBtn").onclick = function () { post({ type: "morph-clear-guides" }); setStatus("Clearing arrows\u2026"); };
+    $("morphRefreshBtn").onclick = function () { requestMorph(); setStatus("Analyzing\u2026"); };
+
+    /* ---- organize connected screens ---- */
+    $("orgGap").oninput = function () { $("orgGapVal").textContent = this.value + " px"; };
+    $("orgClusterGap").oninput = function () { $("orgClusterGapVal").textContent = this.value + " px"; };
+    $("organizeBtn").onclick = function () {
+      post({ type: "organize-connected", options: { gap: +$("orgGap").value, clusterGap: +$("orgClusterGap").value } });
+      setStatus("Organizing\u2026");
+    };
+
     /* ---- flow chip preview ---- */
     function renderFlow(names) {
       var box = $("flowChips");
@@ -752,10 +913,14 @@
         var count = info.selectedFrames || 0;
         $("selBadge").textContent = count ? count + " selected" : (info.totalFrames + " on page");
         renderFlow(info.names);
+        if (state.tab === "morph" && count === 2) requestMorph();
       } else if (msg.type === "done") {
         setStatus(msg.message, "ok");
       } else if (msg.type === "connections") {
         renderConnections(msg.list);
+        if (msg.message) setStatus(msg.message, "ok");
+      } else if (msg.type === "morph") {
+        renderMorph(msg.report);
         if (msg.message) setStatus(msg.message, "ok");
       } else if (msg.type === "error") {
         setStatus(msg.message, "err");

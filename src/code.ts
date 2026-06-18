@@ -11,12 +11,19 @@ import {
   getFlowConnections,
   clearAllConnections,
   removeBrokenConnections,
+  analyzeMorph,
+  selectLayers,
+  renameLayer,
+  drawMorphGuides,
+  clearMorphGuides,
+  organizeConnected,
   getDeckInfo,
   ConnectOptions,
   PageNumberOptions,
   NormalizeOptions,
   TidyOptions,
   PolishOptions,
+  OrganizeOptions,
 } from "./actions";
 
 figma.showUI(__html__, { width: 380, height: 640, themeColors: true, title: "Luma" });
@@ -85,6 +92,41 @@ figma.ui.onmessage = async (msg: UIMessage) => {
         figma.notify(result);
         const list = await getFlowConnections();
         figma.ui.postMessage({ type: "connections", list, message: result });
+        break;
+      }
+      case "morph-analyze": {
+        const report = await analyzeMorph();
+        figma.ui.postMessage({ type: "morph", report });
+        break;
+      }
+      case "morph-select": {
+        await selectLayers((msg.options as { ids: string[] }).ids);
+        break;
+      }
+      case "morph-rename": {
+        const o = msg.options as { id: string; name: string };
+        const result = await renameLayer(o.id, o.name);
+        figma.notify(result);
+        const report = await analyzeMorph();
+        figma.ui.postMessage({ type: "morph", report, message: result });
+        break;
+      }
+      case "morph-guides": {
+        const result = await drawMorphGuides();
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "morph-clear-guides": {
+        const result = await clearMorphGuides();
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "organize-connected": {
+        const result = await organizeConnected(msg.options as OrganizeOptions);
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
         break;
       }
       case "resize": {
