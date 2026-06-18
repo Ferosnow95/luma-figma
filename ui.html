@@ -191,6 +191,7 @@
     .seqitem .rowbtn:hover { color: var(--text); border-color: var(--brand); }
     .seqitem:hover .rowbtn { display: inline-flex; }
     .seqitem .rowbtn.del:hover { color: var(--danger); border-color: var(--danger); }
+    .seqitem .rowbtn.dup:hover { color: var(--brand); border-color: var(--brand); }
     .seqitem .rowbtn.wire:hover { color: #b69bff; border-color: #8b6fe0; }
     .seqitem .rowbtn.wire.on { color: #b69bff; border-color: #8b6fe0; background: rgba(139, 111, 224, 0.18); }
     .seqitem.branch { margin-left: 22px; border-style: dashed; background: transparent; }
@@ -1064,11 +1065,17 @@
         var thumb = document.createElement("img"); thumb.className = "thumb"; thumb.setAttribute("data-thumb", item.id); thumb.alt = "";
         if (state.thumbs[item.id]) thumb.src = state.thumbs[item.id];
         var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = item.name; nm.title = "Double-click to rename";
+        var dupBtn = document.createElement("button"); dupBtn.className = "rowbtn dup"; dupBtn.innerHTML = "&#10697;"; dupBtn.title = "Duplicate this slide below";
         var branchBtn = document.createElement("button"); branchBtn.className = "rowbtn branch"; branchBtn.innerHTML = "&#9737;"; branchBtn.title = "Branch this screen for animations";
-        row.appendChild(grip); row.appendChild(idx); row.appendChild(thumb); row.appendChild(nm); row.appendChild(branchBtn);
+        row.appendChild(grip); row.appendChild(idx); row.appendChild(thumb); row.appendChild(nm); row.appendChild(dupBtn); row.appendChild(branchBtn);
         grip.addEventListener("mousedown", function () { row.draggable = true; });
         grip.addEventListener("mouseup", function () { row.draggable = false; });
         nm.addEventListener("dblclick", function (e) { e.stopPropagation(); beginRename(row, nm, item); });
+        dupBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          post({ type: "duplicate-slide", options: { id: item.id } });
+          setStatus("Duplicating \u201c" + item.name + "\u201d\u2026");
+        });
         branchBtn.addEventListener("click", function (e) {
           e.stopPropagation();
           post({ type: "branch-frame", options: { id: item.id } });

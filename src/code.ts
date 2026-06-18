@@ -27,6 +27,7 @@ import {
   promoteBranch,
   removeBranch,
   wireBranchIntoFlow,
+  duplicateSlide,
   getBranchMap,
   getDeckInfo,
   ConnectOptions,
@@ -238,6 +239,15 @@ figma.ui.onmessage = async (msg: UIMessage) => {
         const message = await wireBranchIntoFlow({ branchId: o.id, connectOptions: o.connectOptions });
         figma.notify(message);
         figma.ui.postMessage({ type: "branches", map: getBranchMap() });
+        figma.ui.postMessage({ type: "done", message });
+        break;
+      }
+      case "duplicate-slide": {
+        const o = msg.options as { id: string };
+        const res = await duplicateSlide(o.id);
+        const message = `Duplicated \u2192 ${res.name}.`;
+        figma.notify(message);
+        pushSelectionForced();
         figma.ui.postMessage({ type: "done", message });
         break;
       }

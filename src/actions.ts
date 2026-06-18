@@ -846,6 +846,67 @@ export async function resequenceFrames(ids: string[]): Promise<number> {
   return nodes.length;
 }
 
+// Where the (N+1)th slide would sit, extrapolating the deck's existing grid so a
+// freshly inserted slide can push the rest along by exactly one slot.
+function nextDeckSlot(deck: DeckFrame[]): { x: number; y: number } {
+  const last = deck[deck.length - 1];
+  if (deck.length < 2) return { x: last.x, y: last.y + last.height + 80 };
+  const minY = Math.min(...deck.map((f) => f.y));
+  const rowTol = deck[0].height * 0.5;
+  const firstRow = deck.filter((f) => Math.abs(f.y - minY) <= rowTol).sort((a, b) => a.x - b.x);
+  const cols = Math.max(1, firstRow.length);
+  let gapX = 80;
+  if (firstRow.length >= 2) gapX = Math.max(0, firstRow[1].x - (firstRow[0].x + firstRow[0].width));
+  const rowBottom = minY + Math.max(...firstRow.map((f) => f.height));
+  const below = deck.filter((f) => f.y > minY + rowTol).sort((a, b) => a.y - b.y);
+  const gapY = below.length ? Math.max(0, below[0].y - rowBottom) : 80;
+  if (cols <= 1) return { x: last.x, y: last.y + last.height + gapY };
+  const col = deck.length % cols;
+  if (col === 0) return { x: firstRow[0].x, y: last.y + last.height + gapY }; // wrap to a new row
+  return { x: last.x + last.width + gapX, y: last.y }; // continue the current row
+}
+
+// Duplicate a slide directly beneath itself in the sequence: the clone takes the
+// next slot, every later slide shifts along by one, and the deck is renumbered.
+export async function duplicateSlide(id: string): Promise<{ id: string; name: string; index: number }> {
+  const node = await figma.getNodeByIdAsync(id);
+  if (!node || !("type" in node) || !isDeckFrame(node as SceneNode)) {
+    throw new Error("Select a slide to duplicate.");
+  }
+  const orig = node as DeckFrame;
+  const deck = orderFrames(collectFrames([]), "position");
+  const idx = deck.findIndex((f) => f.id === orig.id);
+  if (idx < 0) throw new Error("That slide isn't part of the deck.");
+
+  const clone = orig.clone();
+  figma.currentPage.appendChild(clone);
+
+  const slots = deck.map((f) => ({ x: f.x, y: f.y }));
+  slots.push(nextDeckSlot(deck));
+
+  const newOrder: DeckFrame[] = [];
+  for (let i = 0; i <= idx; i++) newOrder.push(deck[i]);
+  newOrder.push(clone);
+  for (let i = idx + 1; i < deck.length; i++) newOrder.push(deck[i]);
+
+  for (let i = 0; i < newOrder.length; i++) {
+    newOrder[i].x = slots[i].x;
+    newOrder[i].y = slots[i].y;
+  }
+
+  // Renumber the whole deck if it follows a "base + number" naming convention.
+  const m = orig.name.match(/^(.*?)[\s\-_]*\d+\s*$/);
+  if (m) {
+    await renameFrames({ ids: newOrder.map((f) => f.id), base: m[1].trim(), start: 1 });
+  } else {
+    clone.name = orig.name + " copy";
+  }
+
+  figma.viewport.scrollAndZoomIntoView([clone]);
+  figma.currentPage.selection = []; // keep the sequence list showing the full deck
+  return { id: clone.id, name: clone.name, index: idx + 1 };
+}
+
 function makeLine(p1: { x: number; y: number }, p2: { x: number; y: number }, color: RGB): RectangleNode {
   const dx = p2.x - p1.x;
   const dy = p2.y - p1.y;
