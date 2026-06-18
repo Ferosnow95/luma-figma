@@ -324,6 +324,7 @@
             <div class="switch"><span>Reposition frames<small>Drop slides into this order, same layout</small></span><div class="toggle on" id="tg-reMove"></div></div>
             <div class="switch"><span>Renumber names<small>Slide 01…N in this order</small></span><div class="toggle on" id="tg-reNum"></div></div>
             <div class="switch"><span>Reconnect flow<small>Re-wire using your Transition settings</small></span><div class="toggle on" id="tg-reWire"></div></div>
+            <div class="switch"><span>Live update<small>Apply to the canvas as you reorder</small></span><div class="toggle on" id="tg-live"></div></div>
             <button class="primary" id="applyOrderBtn" style="margin-top:8px;">Apply new order</button>
           </div>
 
@@ -633,6 +634,7 @@
       reMove: true,
       reNum: true,
       reWire: true,
+      liveReorder: true,
     };
 
     var PRESET_BEZIER = {
@@ -736,6 +738,7 @@
     toggle("tg-reMove", "reMove");
     toggle("tg-reNum", "reNum");
     toggle("tg-reWire", "reWire");
+    toggle("tg-live", "liveReorder");
     toggle("tg-skip", "skipFirst");
     toggle("tg-pNorm", "pNorm");
     toggle("tg-pTidy", "pTidy");
@@ -822,9 +825,12 @@
       post({ type: "connect-slides", options: connectOptionsObj() });
       setStatus("Connecting slides\u2026");
     };
-    $("applyOrderBtn").onclick = function () {
-      if (!state.seq.length) { setStatus("Select screens first.", "err"); return; }
-      if (!state.reMove && !state.reNum && !state.reWire) { setStatus("Turn on a step to apply.", "err"); return; }
+    $("applyOrderBtn").onclick = function () { applyOrder(false); };
+    // Push the current list order to the canvas (reposition / renumber / re-wire per
+    // the toggles). Called by the Apply button and live on every drag reorder.
+    function applyOrder(live) {
+      if (state.seq.length < 2) { if (!live) setStatus("Select at least 2 screens.", "err"); return; }
+      if (!state.reMove && !state.reNum && !state.reWire) { if (!live) setStatus("Turn on a step to apply.", "err"); return; }
       var base = $("renameBase").value || "";
       var ids = state.seq.map(function (s) { return s.id; });
       // Optimistically renumber the list so it reflects the new names without
@@ -847,8 +853,8 @@
         ids: ids, reposition: state.reMove, renumber: state.reNum, base: base,
         rewire: state.reWire, connectOptions: connectOptionsObj(),
       } });
-      setStatus("Applying new order\u2026");
-    };
+      setStatus(live ? "Updating canvas\u2026" : "Applying new order\u2026");
+    }
     function updatePolishDesc() {
       $("pNormDesc").textContent = "All frames to " + (+$("normW").value || 1920) + "\u00d7" + (+$("normH").value || 1080);
     }
@@ -1105,7 +1111,8 @@
       }
       state.seq = next;
       renumberSeq();
-      setStatus("Order updated — hit Connect slides to apply.", "ok");
+      if (state.liveReorder) applyOrder(true);
+      else setStatus("Order updated — hit Apply new order.", "ok");
     }
 
     $("seqList").addEventListener("dragover", function (e) {
