@@ -1061,6 +1061,207 @@ export async function organizeConnected(opts: OrganizeOptions): Promise<string> 
 }
 
 // ---------------------------------------------------------------------------
+// Branches — animation sandboxes for a screen
+//
+// A branch is a clone of a deck frame parked inside a dedicated Section so it
+// stays out of the main deck (collectFrames ignores section contents by
+// default). You animate freely on the branch without polluting the sequence,
+// and can later "promote" it back into the deck as a real slide.
+// ---------------------------------------------------------------------------
+
+const BRANCH_MARK = "luma-branch"; // on a branch frame: "1"
+const BRANCH_OF = "luma-branch-of"; // on a branch frame: parent frame id
+const BRANCH_IDS = "luma-branch-ids"; // on a parent frame: JSON array of branch ids
+const BRANCH_SECTION = "luma-branch-section"; // on a section: parent frame id
+const BRANCH_LINK = "luma-branch-link"; // on a connector group: branch id
+const BRANCH_COLOR: RGB = { r: 0.55, g: 0.36, b: 0.96 };
+
+export interface BranchInfo {
+  id: string;
+  name: string;
+}
+export type BranchMap = { [parentId: string]: BranchInfo[] };
+
+function readBranchIds(node: SceneNode): string[] {
+  const raw = node.getPluginData(BRANCH_IDS);
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+// Scan every section for tagged branch frames and group them by parent id.
+export function getBranchMap(): BranchMap {
+  const map: BranchMap = {};
+  for (const c of figma.currentPage.children) {
+    if (c.type !== "SECTION") continue;
+    for (const child of c.children) {
+      if (child.getPluginData(BRANCH_MARK) === "1") {
+        const pid = child.getPluginData(BRANCH_OF);
+        if (pid) (map[pid] = map[pid] || []).push({ id: child.id, name: child.name });
+      }
+    }
+  }
+  return map;
+}
+
+function ensureBranchSection(parent: DeckFrame): SectionNode {
+  for (const c of figma.currentPage.children) {
+    if (c.type === "SECTION" && c.getPluginData(BRANCH_SECTION) === parent.id) return c;
+  }
+  const sec = figma.createSection();
+  sec.name = "Branches \u00b7 " + parent.name;
+  sec.setPluginData(BRANCH_SECTION, parent.id);
+  figma.currentPage.appendChild(sec);
+  sec.x = parent.x;
+  sec.y = parent.y + parent.height + 240;
+  return sec;
+}
+
+function nextBranchSpot(sec: SectionNode, parent: DeckFrame): { x: number; y: number } {
+  const kids = sec.children;
+  if (!kids.length) return { x: parent.x, y: parent.y + parent.height + 240 };
+  let maxRight = -Infinity;
+  let top = Infinity;
+  for (const k of kids) {
+    maxRight = Math.max(maxRight, k.x + k.width);
+    top = Math.min(top, k.y);
+  }
+  return { x: maxRight + 80, y: top };
+}
+
+function reflowBranchSection(sec: SectionNode): void {
+  const kids = sec.children;
+  if (!kids.length) return;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const k of kids) {
+    minX = Math.min(minX, k.x);
+    minY = Math.min(minY, k.y);
+    maxX = Math.max(maxX, k.x + k.width);
+    maxY = Math.max(maxY, k.y + k.height);
+  }
+  const pad = 60;
+  const topRoom = 48; // breathing room for the section title
+  sec.x = minX - pad;
+  sec.y = minY - pad - topRoom;
+  sec.resizeWithoutConstraints(maxX - minX + pad * 2, maxY - minY + pad * 2 + topRoom);
+}
+
+async function drawBranchLink(parent: DeckFrame, branch: SceneNode): Promise<void> {
+  removeBranchLink(branch.id);
+  const from = { x: parent.x + parent.width / 2, y: parent.y + parent.height };
+  const to = { x: branch.x + branch.width / 2, y: branch.y };
+  const parts: SceneNode[] = [makeLine(from, to, BRANCH_COLOR), makeDot(to, BRANCH_COLOR)];
+  try {
+    await figma.loadFontAsync({ family: "Inter", style: "Medium" });
+    const label = figma.createText();
+    label.fontName = { family: "Inter", style: "Medium" };
+    label.characters = "branch";
+    label.fontSize = 11;
+    label.fills = [{ type: "SOLID", color: BRANCH_COLOR }];
+    label.x = (from.x + to.x) / 2 + 8;
+    label.y = (from.y + to.y) / 2 - 7;
+    parts.push(label);
+  } catch (_) {
+    /* font unavailable — arrow only */
+  }
+  const group = figma.group(parts, figma.currentPage);
+  group.name = "Luma Branch Link";
+  group.setPluginData(BRANCH_LINK, branch.id);
+  group.locked = true;
+}
+
+function removeBranchLink(branchId: string): void {
+  for (const c of figma.currentPage.children) {
+    if (c.getPluginData(BRANCH_LINK) === branchId) c.remove();
+  }
+}
+
+// Clone a deck frame into its branch section so it can be animated in isolation.
+export async function branchFrame(parentId: string): Promise<{ id: string; name: string; parentName: string }> {
+  const parent = await figma.getNodeByIdAsync(parentId);
+  if (!parent || !("type" in parent) || !isDeckFrame(parent as SceneNode)) {
+    throw new Error("Select a screen to branch.");
+  }
+  const p = parent as DeckFrame;
+  const sec = ensureBranchSection(p);
+  const spot = nextBranchSpot(sec, p);
+  const clone = p.clone();
+  clone.setPluginData(BRANCH_MARK, "1");
+  clone.setPluginData(BRANCH_OF, parentId);
+  const existing = readBranchIds(p);
+  clone.name = p.name + " \u00b7 branch " + (existing.length + 1);
+  sec.appendChild(clone);
+  clone.x = spot.x;
+  clone.y = spot.y;
+  reflowBranchSection(sec);
+  existing.push(clone.id);
+  p.setPluginData(BRANCH_IDS, JSON.stringify(existing));
+  await drawBranchLink(p, clone);
+  return { id: clone.id, name: clone.name, parentName: p.name };
+}
+
+// Move a branch back into the main deck as a real slide beside its parent.
+export async function promoteBranch(branchId: string): Promise<{ name: string; parentName: string }> {
+  const node = await figma.getNodeByIdAsync(branchId);
+  if (!node || !("type" in node) || (node as SceneNode).getPluginData(BRANCH_MARK) !== "1") {
+    throw new Error("That isn't a branch.");
+  }
+  const branch = node as DeckFrame;
+  const parentId = branch.getPluginData(BRANCH_OF);
+  const parent = parentId ? await figma.getNodeByIdAsync(parentId) : null;
+  const px = parent && "x" in parent ? (parent as DeckFrame).x : branch.x;
+  const py = parent && "y" in parent ? (parent as DeckFrame).y : branch.y;
+  const pw = parent && "width" in parent ? (parent as DeckFrame).width : branch.width;
+  figma.currentPage.appendChild(branch); // detach from the section, keep position
+  branch.x = px + pw + 80;
+  branch.y = py;
+  branch.setPluginData(BRANCH_MARK, "");
+  branch.setPluginData(BRANCH_OF, "");
+  removeBranchLink(branchId);
+  if (parent && "getPluginData" in parent) {
+    const ids = readBranchIds(parent as SceneNode).filter((id) => id !== branchId);
+    (parent as DeckFrame).setPluginData(BRANCH_IDS, JSON.stringify(ids));
+  }
+  cleanupEmptyBranchSections();
+  figma.currentPage.selection = [];
+  return { name: branch.name, parentName: parent && "name" in parent ? parent.name : "" };
+}
+
+// Delete a branch (and tidy its section/link).
+export async function removeBranch(branchId: string): Promise<string> {
+  const node = await figma.getNodeByIdAsync(branchId);
+  if (!node || !("type" in node)) throw new Error("Branch not found.");
+  const name = node.name;
+  const parentId = (node as SceneNode).getPluginData(BRANCH_OF);
+  if (parentId) {
+    const parent = await figma.getNodeByIdAsync(parentId);
+    if (parent && "setPluginData" in parent) {
+      const ids = readBranchIds(parent as SceneNode).filter((id) => id !== branchId);
+      (parent as DeckFrame).setPluginData(BRANCH_IDS, JSON.stringify(ids));
+    }
+  }
+  removeBranchLink(branchId);
+  node.remove();
+  cleanupEmptyBranchSections();
+  return "Removed branch \u201c" + name + "\u201d.";
+}
+
+function cleanupEmptyBranchSections(): void {
+  for (const c of figma.currentPage.children) {
+    if (c.type !== "SECTION" || !c.getPluginData(BRANCH_SECTION)) continue;
+    const hasBranch = c.children.some((k) => k.getPluginData(BRANCH_MARK) === "1");
+    if (!hasBranch) c.remove();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Selection info for the UI
 // ---------------------------------------------------------------------------
 

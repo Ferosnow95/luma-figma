@@ -187,6 +187,14 @@
     .seqitem .thumb { flex: 0 0 auto; width: 42px; height: 26px; object-fit: cover; border-radius: 3px; border: 1px solid var(--stroke); background: var(--bg-tertiary); display: block; }
     .seqitem .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .seqitem .nm-edit { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg-tertiary); border: 1px solid var(--brand); border-radius: 3px; padding: 2px 5px; outline: none; }
+    .seqitem .rowbtn { flex: 0 0 auto; width: 22px; height: 22px; display: none; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--stroke); border-radius: 4px; background: var(--bg-tertiary); color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; }
+    .seqitem .rowbtn:hover { color: var(--text); border-color: var(--brand); }
+    .seqitem:hover .rowbtn { display: inline-flex; }
+    .seqitem .rowbtn.del:hover { color: var(--danger); border-color: var(--danger); }
+    .seqitem.branch { margin-left: 22px; border-style: dashed; background: transparent; }
+    .seqitem.branch .nm { color: var(--muted); font-size: 12px; }
+    .seqitem.branch .elbow { flex: 0 0 auto; width: 12px; color: #8b6fe0; font-size: 13px; text-align: center; }
+    .seqitem.branch .rowbtn { display: inline-flex; }
 
     /* bezier studio */
     .studio { display: flex; gap: 14px; align-items: flex-start; }
@@ -630,6 +638,7 @@
       jitterThreshold: 2,
       received: [],
       seq: [],
+      branches: {},
       selfSelecting: false,
       thumbs: {},
       reMove: true,
@@ -1053,10 +1062,16 @@
         var thumb = document.createElement("img"); thumb.className = "thumb"; thumb.setAttribute("data-thumb", item.id); thumb.alt = "";
         if (state.thumbs[item.id]) thumb.src = state.thumbs[item.id];
         var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = item.name; nm.title = "Double-click to rename";
-        row.appendChild(grip); row.appendChild(idx); row.appendChild(thumb); row.appendChild(nm);
+        var branchBtn = document.createElement("button"); branchBtn.className = "rowbtn branch"; branchBtn.innerHTML = "&#9737;"; branchBtn.title = "Branch this screen for animations";
+        row.appendChild(grip); row.appendChild(idx); row.appendChild(thumb); row.appendChild(nm); row.appendChild(branchBtn);
         grip.addEventListener("mousedown", function () { row.draggable = true; });
         grip.addEventListener("mouseup", function () { row.draggable = false; });
         nm.addEventListener("dblclick", function (e) { e.stopPropagation(); beginRename(row, nm, item); });
+        branchBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          post({ type: "branch-frame", options: { id: item.id } });
+          setStatus("Branching \u201c" + item.name + "\u201d\u2026");
+        });
         row.addEventListener("dragstart", function (e) {
           row.classList.add("dragging");
           e.dataTransfer.effectAllowed = "move";
@@ -1076,8 +1091,42 @@
           setStatus("Selected \u201c" + item.name + "\u201d on the canvas.", "ok");
         });
         box.appendChild(row);
+        (state.branches[item.id] || []).forEach(function (b) { box.appendChild(makeBranchRow(b)); });
       });
       requestThumbs();
+    }
+
+    // A branch row sits indented under its parent: select / promote / remove.
+    function makeBranchRow(b) {
+      var row = document.createElement("div");
+      row.className = "seqitem branch";
+      row.setAttribute("data-id", b.id);
+      var elbow = document.createElement("span"); elbow.className = "elbow"; elbow.innerHTML = "&#8627;";
+      var thumb = document.createElement("img"); thumb.className = "thumb"; thumb.setAttribute("data-thumb", b.id); thumb.alt = "";
+      if (state.thumbs[b.id]) thumb.src = state.thumbs[b.id];
+      var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = b.name; nm.title = b.name;
+      var promote = document.createElement("button"); promote.className = "rowbtn"; promote.innerHTML = "&#8593;"; promote.title = "Promote into the main sequence";
+      var del = document.createElement("button"); del.className = "rowbtn del"; del.innerHTML = "&times;"; del.title = "Remove branch";
+      row.appendChild(elbow); row.appendChild(thumb); row.appendChild(nm); row.appendChild(promote); row.appendChild(del);
+      row.addEventListener("click", function (e) {
+        if (e.target && e.target.closest && e.target.closest(".rowbtn")) return;
+        $("seqList").querySelectorAll(".seqitem.sel").forEach(function (x) { x.classList.remove("sel"); });
+        row.classList.add("sel");
+        state.selfSelecting = true;
+        post({ type: "morph-select", options: { ids: [b.id] } });
+        setStatus("Selected branch \u201c" + b.name + "\u201d.", "ok");
+      });
+      promote.addEventListener("click", function (e) {
+        e.stopPropagation();
+        post({ type: "promote-branch", options: { id: b.id } });
+        setStatus("Promoting \u201c" + b.name + "\u201d\u2026");
+      });
+      del.addEventListener("click", function (e) {
+        e.stopPropagation();
+        post({ type: "remove-branch", options: { id: b.id } });
+        setStatus("Removing branch\u2026");
+      });
+      return row;
     }
 
     // Inline-edit a screen's name directly in the sequence row.
@@ -1116,7 +1165,11 @@
 
     // Ask the plugin to render thumbnails for any frames we haven't cached yet.
     function requestThumbs() {
-      var need = state.seq.filter(function (s) { return !state.thumbs[s.id]; }).map(function (s) { return s.id; });
+      var ids = state.seq.map(function (s) { return s.id; });
+      Object.keys(state.branches).forEach(function (pid) {
+        (state.branches[pid] || []).forEach(function (b) { ids.push(b.id); });
+      });
+      var need = ids.filter(function (id) { return !state.thumbs[id]; });
       if (need.length) post({ type: "get-thumbs", options: { ids: need } });
     }
 
@@ -1173,11 +1226,15 @@
         $("selBadge").textContent = count ? count + " selected" : (info.totalFrames + " on page");
         // A row click selects one frame on the canvas; don't let that collapse the
         // list the user built — skip reconciliation for self-initiated selections.
-        if (state.selfSelecting) { state.selfSelecting = false; }
+        if (msg.force) { state.selfSelecting = false; syncSeq(info.ids, info.names); }
+        else if (state.selfSelecting) { state.selfSelecting = false; }
         else { syncSeq(info.ids, info.names); }
         if (state.tab === "morph" && count === 2) requestMorph();
       } else if (msg.type === "done") {
         setStatus(msg.message, "ok");
+      } else if (msg.type === "branches") {
+        state.branches = msg.map || {};
+        renderSeq();
       } else if (msg.type === "thumbs") {
         (msg.list || []).forEach(function (t) {
           state.thumbs[t.id] = t.url;

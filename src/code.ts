@@ -23,6 +23,10 @@ import {
   exportThumbnails,
   resequenceFrames,
   organizeConnected,
+  branchFrame,
+  promoteBranch,
+  removeBranch,
+  getBranchMap,
   getDeckInfo,
   ConnectOptions,
   PageNumberOptions,
@@ -36,6 +40,10 @@ figma.showUI(__html__, { width: 380, height: 640, themeColors: true, title: "Lum
 
 function pushSelection(): void {
   figma.ui.postMessage({ type: "selection", info: getDeckInfo() });
+}
+
+function pushSelectionForced(): void {
+  figma.ui.postMessage({ type: "selection", info: getDeckInfo(), force: true });
 }
 
 figma.on("selectionchange", pushSelection);
@@ -195,6 +203,33 @@ figma.ui.onmessage = async (msg: UIMessage) => {
         const result = await renameLayer(o.id, o.name);
         figma.notify(result);
         figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "branch-frame": {
+        const o = msg.options as { id: string };
+        const res = await branchFrame(o.id);
+        const message = `Branched \u201c${res.parentName}\u201d \u00b7 ${res.name}.`;
+        figma.notify(message);
+        figma.ui.postMessage({ type: "branches", map: getBranchMap() });
+        figma.ui.postMessage({ type: "done", message });
+        break;
+      }
+      case "promote-branch": {
+        const o = msg.options as { id: string };
+        const res = await promoteBranch(o.id);
+        const message = `Promoted \u201c${res.name}\u201d into the deck.`;
+        figma.notify(message);
+        figma.ui.postMessage({ type: "branches", map: getBranchMap() });
+        pushSelectionForced();
+        figma.ui.postMessage({ type: "done", message });
+        break;
+      }
+      case "remove-branch": {
+        const o = msg.options as { id: string };
+        const message = await removeBranch(o.id);
+        figma.notify(message);
+        figma.ui.postMessage({ type: "branches", map: getBranchMap() });
+        figma.ui.postMessage({ type: "done", message });
         break;
       }
       case "get-thumbs": {
