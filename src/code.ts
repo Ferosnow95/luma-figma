@@ -64,7 +64,15 @@ function scheduleGuideRedraw(): void {
   }, 120);
 }
 
-figma.on("documentchange", scheduleGuideRedraw);
+// In dynamic-page mode a documentchange handler can only be registered after all
+// pages are loaded. Do it lazily the first time live guides are turned on.
+let guideWatcherReady = false;
+async function ensureGuideWatcher(): Promise<void> {
+  if (guideWatcherReady) return;
+  await figma.loadAllPagesAsync();
+  figma.on("documentchange", scheduleGuideRedraw);
+  guideWatcherReady = true;
+}
 
 interface UIMessage {
   type: string;
@@ -157,6 +165,7 @@ figma.ui.onmessage = async (msg: UIMessage) => {
         break;
       }
       case "morph-guides": {
+        await ensureGuideWatcher();
         const result = await drawMorphGuides();
         guidesLive = morphGuidesActive();
         suppressGuideRedrawUntil = Date.now() + 350;
