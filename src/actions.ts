@@ -54,6 +54,7 @@ export interface NormalizeOptions {
 
 export interface TidyOptions {
   gap: number;
+  direction?: "row" | "column";
 }
 
 export interface PolishOptions {
@@ -380,8 +381,18 @@ export async function normalizeDeck(opts: NormalizeOptions): Promise<string> {
 export async function tidyDeck(opts: TidyOptions): Promise<string> {
   const frames = orderFrames(collectFrames(figma.currentPage.selection), "position");
   if (frames.length < 2) throw new Error("Select 2+ frames to tidy.");
+  if (opts.direction === "column") {
+    const x = Math.min(...frames.map((f) => f.x));
+    let y = Math.min(...frames.map((f) => f.y));
+    for (const f of frames) {
+      f.x = x;
+      f.y = y;
+      y += f.height + opts.gap;
+    }
+    return `Tidied ${frames.length} slides into a column.`;
+  }
   const y = Math.min(...frames.map((f) => f.y));
-  let x = frames[0].x;
+  let x = Math.min(...frames.map((f) => f.x));
   for (const f of frames) {
     f.x = x;
     f.y = y;
@@ -881,6 +892,38 @@ function nextDeckSlot(deck: DeckFrame[]): { x: number; y: number } {
   return { x: last.x + last.width + gapX, y: last.y }; // continue the current row
 }
 
+// Snugly wrap nodes in a new page-level section at their current absolute
+// positions (works regardless of how sections treat child coordinates).
+function wrapInSection(name: string, nodes: SceneNode[]): SectionNode {
+  const boxes = nodes.map((n) => n.absoluteBoundingBox);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const b of boxes) {
+    if (!b) continue;
+    minX = Math.min(minX, b.x);
+    minY = Math.min(minY, b.y);
+    maxX = Math.max(maxX, b.x + b.width);
+    maxY = Math.max(maxY, b.y + b.height);
+  }
+  const PAD = 80;
+  const sec = figma.createSection();
+  sec.name = name;
+  figma.currentPage.appendChild(sec);
+  sec.x = minX - PAD;
+  sec.y = minY - PAD;
+  sec.resizeWithoutConstraints(maxX - minX + PAD * 2, maxY - minY + PAD * 2);
+  for (let i = 0; i < nodes.length; i++) {
+    const b = boxes[i];
+    if (!b) continue;
+    sec.appendChild(nodes[i]);
+    const nb = nodes[i].absoluteBoundingBox; // nudge back to the original absolute spot
+    if (nb) {
+      nodes[i].x += b.x - nb.x;
+      nodes[i].y += b.y - nb.y;
+    }
+  }
+  return sec;
+}
+
 // Duplicate a slide directly beneath itself in the sequence: the clone takes the
 // next slot, every later slide shifts along by one, and the deck is renumbered.
 export async function duplicateSlide(id: string): Promise<{ id: string; name: string; index: number }> {
@@ -889,6 +932,7 @@ export async function duplicateSlide(id: string): Promise<{ id: string; name: st
     throw new Error("Select a slide to duplicate.");
   }
   const orig = node as DeckFrame;
+  const origName = orig.name;
   // Work within whatever container the slide actually lives in (the page, or a
   // section if the deck got absorbed into one) so we never miss it.
   const parent = orig.parent;
@@ -919,14 +963,22 @@ export async function duplicateSlide(id: string): Promise<{ id: string; name: st
   }
 
   // Renumber the whole deck if it follows a "base + number" naming convention.
-  const m = orig.name.match(/^(.*?)[\s\-_]*\d+\s*$/);
+  const m = origName.match(/^(.*?)[\s\-_]*\d+\s*$/);
   if (m) {
     await renameFrames({ ids: newOrder.map((f) => f.id), base: m[1].trim(), start: 1 });
   } else {
-    clone.name = orig.name + " copy";
+    clone.name = origName + " copy";
+  }
+
+  // If the slide wasn't already grouped, wrap it and its duplicate in a fresh
+  // section so the column starts organized.
+  if (parent.type === "PAGE") {
+    const base = m && m[1].trim() ? m[1].trim() : origName;
+    wrapInSection(base, [orig, clone]);
   }
 
   figma.viewport.scrollAndZoomIntoView([clone]);
+  figma.viewport.zoom = figma.viewport.zoom * 0.55; // pull back so it's centered but not too tight
   figma.currentPage.selection = []; // keep the sequence list showing the full deck
   return { id: clone.id, name: clone.name, index: idx + 1 };
 }

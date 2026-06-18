@@ -520,9 +520,14 @@
             <button class="primary" id="normBtn" style="margin-top:12px">Normalize frames</button>
           </div>
           <div class="card">
-            <h3>Tidy into a row</h3>
-            <p class="hint">Line slides up left-to-right with an even gap.</p>
-            <label class="row">Gap</label>
+            <h3>Tidy deck</h3>
+            <p class="hint">Line slides up with an even gap, as a row or a column.</p>
+            <label class="row">Direction</label>
+            <div class="seg" id="seg-tidydir">
+              <button data-v="row" class="active">Row</button>
+              <button data-v="column">Column</button>
+            </div>
+            <label class="row" style="margin-top:10px">Gap</label>
             <div class="range">
               <input type="range" id="gap" min="0" max="400" step="10" value="120" />
               <span class="val" id="gapVal">120 px</span>
@@ -629,6 +634,7 @@
       autoDelay: 3,
       loop: false,
       back: false,
+      tidydir: "row",
       numfmt: "plain",
       numpos: "bottom-right",
       numorder: "position",
@@ -718,6 +724,7 @@
     segment("seg-numfmt", "numfmt");
     segment("seg-numpos", "numpos");
     segment("seg-numorder", "numorder");
+    segment("seg-tidydir", "tidydir");
 
     /* ---- transition select (toggles direction) ---- */
     $("transition").onchange = function () {
@@ -913,7 +920,7 @@
       setStatus("Normalizing…");
     };
     $("tidyBtn").onclick = function () {
-      post({ type: "tidy", options: { gap: +$("gap").value } });
+      post({ type: "tidy", options: { gap: +$("gap").value, direction: state.tidydir } });
       setStatus("Tidying…");
     };
 
