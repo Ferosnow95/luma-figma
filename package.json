@@ -1,0 +1,16 @@
+{
+  "name": "luma-figma-plugin",
+  "version": "0.2.0",
+  "description": "Luma — a presentation toolbox for Figma. One-click multi-step deck actions: connect slides with Smart Animate, design easing curves, number pages, normalize and tidy.",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "esbuild src/code.ts --bundle --format=iife --target=es2017 --outfile=dist/code.js",
+    "watch": "esbuild src/code.ts --bundle --format=iife --target=es2017 --outfile=dist/code.js --watch"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.100.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.0"
+  }
+}

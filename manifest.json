@@ -1,0 +1,18 @@
+{
+  "name": "Luma",
+  "id": "luma-cursor-ai-figma",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "capabilities": [],
+  "enableProposedApi": false,
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["none"],
+    "reasoning": "Luma runs entirely on-canvas with no network calls."
+  },
+  "relaunchButtons": [
+    { "command": "open", "name": "Open Luma" }
+  ]
+}

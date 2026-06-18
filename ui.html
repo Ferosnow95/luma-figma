@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Luma</title>
+  <style>
+    :root {
+      --bg: #0d0d12;
+      --glass: rgba(255, 255, 255, 0.045);
+      --glass-strong: rgba(255, 255, 255, 0.08);
+      --stroke: rgba(255, 255, 255, 0.09);
+      --stroke-soft: rgba(255, 255, 255, 0.06);
+      --text: #ededf2;
+      --muted: #8c8c9c;
+      --accent: #7c5cff;
+      --accent-2: #29d4c0;
+      --danger: #ff5a6a;
+      --radius: 12px;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      font-size: 13px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(620px 360px at 12% -8%, rgba(124, 92, 255, 0.22), transparent 60%),
+        radial-gradient(520px 320px at 108% 8%, rgba(41, 212, 192, 0.16), transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app { position: relative; z-index: 1; display: flex; height: 100vh; }
+
+    /* ---- left icon rail ---- */
+    .rail {
+      width: 56px;
+      flex: 0 0 56px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 12px 0;
+      border-right: 1px solid var(--stroke-soft);
+      background: rgba(0, 0, 0, 0.18);
+    }
+    .rail .logo {
+      width: 26px; height: 26px; margin-bottom: 8px; border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 4px 14px rgba(124, 92, 255, 0.5);
+    }
+    .rail button {
+      width: 40px; height: 40px; border: 0; border-radius: 10px;
+      background: transparent; color: var(--muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, color 0.15s, transform 0.1s;
+    }
+    .rail button svg { width: 18px; height: 18px; }
+    .rail button:hover { background: var(--glass); color: var(--text); }
+    .rail button.active {
+      color: #fff;
+      background: linear-gradient(135deg, rgba(124, 92, 255, 0.32), rgba(41, 212, 192, 0.22));
+      box-shadow: inset 0 0 0 1px var(--stroke);
+    }
+
+    /* ---- main column ---- */
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px 10px;
+    }
+    header .title { font-size: 15px; font-weight: 650; letter-spacing: 0.2px; }
+    header .sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+    .badge {
+      font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 20px;
+      background: var(--glass-strong); border: 1px solid var(--stroke); color: var(--text);
+      white-space: nowrap;
+    }
+    .badge .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); margin-right: 6px; }
+
+    .views { flex: 1; overflow-y: auto; padding: 4px 16px 16px; }
+    .views::-webkit-scrollbar { width: 8px; }
+    .views::-webkit-scrollbar-thumb { background: var(--stroke); border-radius: 8px; }
+
+    .view { display: none; animation: fade 0.18s ease; }
+    .view.active { display: block; }
+    @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    .card {
+      background: var(--glass);
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius);
+      padding: 14px;
+      margin-bottom: 12px;
+      backdrop-filter: blur(8px);
+    }
+    .card h3 { margin: 0 0 2px; font-size: 13px; font-weight: 650; }
+    .card p.hint { margin: 0 0 12px; font-size: 11px; color: var(--muted); line-height: 1.4; }
+
+    label.row { display: block; font-size: 11px; color: var(--muted); margin: 12px 0 6px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; }
+    label.row:first-of-type { margin-top: 0; }
+
+    /* segmented control */
+    .seg { display: flex; gap: 4px; background: rgba(0,0,0,0.25); border: 1px solid var(--stroke-soft); border-radius: 10px; padding: 3px; }
+    .seg button {
+      flex: 1; border: 0; background: transparent; color: var(--muted); cursor: pointer;
+      padding: 7px 4px; border-radius: 7px; font-size: 12px; font-weight: 550; transition: 0.15s;
+    }
+    .seg button:hover { color: var(--text); }
+    .seg button.active { background: var(--glass-strong); color: #fff; box-shadow: inset 0 0 0 1px var(--stroke); }
+
+    /* chips */
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chips button {
+      border: 1px solid var(--stroke-soft); background: rgba(255,255,255,0.03); color: var(--muted);
+      padding: 6px 11px; border-radius: 20px; font-size: 12px; cursor: pointer; transition: 0.15s; font-weight: 550;
+    }
+    .chips button:hover { color: var(--text); border-color: var(--stroke); }
+    .chips button.active { color: #fff; border-color: transparent; background: linear-gradient(135deg, var(--accent), #6a7bff); }
+
+    select, input[type="number"], input[type="text"] {
+      width: 100%; background: rgba(0,0,0,0.28); border: 1px solid var(--stroke-soft);
+      color: var(--text); border-radius: 9px; padding: 8px 10px; font-size: 12px; font-family: inherit;
+    }
+    select:focus, input:focus { outline: none; border-color: var(--accent); }
+
+    .range { display: flex; align-items: center; gap: 10px; }
+    input[type="range"] { -webkit-appearance: none; flex: 1; height: 4px; border-radius: 4px; background: var(--stroke); }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+      background: #fff; box-shadow: 0 0 0 4px rgba(124,92,255,0.3); cursor: pointer;
+    }
+    .range .val { width: 58px; text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    .switch { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; }
+    .switch span { font-size: 12.5px; }
+    .switch small { display: block; color: var(--muted); font-size: 11px; }
+    .toggle { position: relative; width: 38px; height: 22px; flex: 0 0 38px; border-radius: 22px; background: rgba(255,255,255,0.12); cursor: pointer; transition: 0.18s; }
+    .toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: 0.18s; }
+    .toggle.on { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+    .toggle.on::after { left: 19px; }
+
+    .two { display: flex; gap: 10px; }
+    .two > div { flex: 1; }
+
+    .primary {
+      width: 100%; border: 0; cursor: pointer; color: #fff; font-weight: 650; font-size: 13px;
+      padding: 12px; border-radius: 11px; margin-top: 4px;
+      background: linear-gradient(135deg, var(--accent), #5a6dff);
+      box-shadow: 0 8px 22px rgba(124, 92, 255, 0.4);
+      transition: transform 0.1s, filter 0.15s;
+    }
+    .primary:hover { filter: brightness(1.08); }
+    .primary:active { transform: translateY(1px); }
+    .ghost {
+      width: 100%; border: 1px solid var(--stroke); cursor: pointer; color: var(--text); font-weight: 600;
+      padding: 10px; border-radius: 10px; background: var(--glass); font-size: 12.5px; transition: 0.15s;
+    }
+    .ghost:hover { background: var(--glass-strong); }
+
+    /* flow chips preview */
+    .flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 30px; }
+    .flow .slide {
+      background: var(--glass-strong); border: 1px solid var(--stroke); border-radius: 8px;
+      padding: 5px 9px; font-size: 11px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .flow .arrow { color: var(--accent); font-size: 12px; }
+    .flow .empty { color: var(--muted); font-size: 11px; }
+
+    /* bezier studio */
+    .studio { display: flex; gap: 14px; align-items: flex-start; }
+    .curvebox { flex: 0 0 168px; }
+    .curve-svg { width: 168px; height: 168px; background: rgba(0,0,0,0.3); border: 1px solid var(--stroke-soft); border-radius: 10px; touch-action: none; }
+    .curve-svg .grid { stroke: rgba(255,255,255,0.06); stroke-width: 0.5; }
+    .curve-svg .guide { stroke: rgba(255,255,255,0.14); stroke-width: 0.6; stroke-dasharray: 2 2; }
+    .curve-svg .curve { stroke: url(#g); stroke-width: 2.4; fill: none; }
+    .curve-svg .handle-line { stroke: rgba(255,255,255,0.25); stroke-width: 1; }
+    .curve-svg .handle { fill: #fff; stroke: var(--accent); stroke-width: 2; cursor: grab; }
+    .studio .meta { flex: 1; min-width: 0; }
+    .bez-val { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--muted); margin: 0 0 10px; }
+    .preview-track { position: relative; height: 30px; background: rgba(0,0,0,0.3); border: 1px solid var(--stroke-soft); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+    .preview-ball { position: absolute; top: 7px; left: 6px; width: 14px; height: 14px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+
+    .soon { opacity: 0.55; }
+    .soon-tag { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; color: var(--muted); border: 1px solid var(--stroke); border-radius: 10px; padding: 1px 6px; margin-left: 8px; }
+
+    .connlist { max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+    .connlist::-webkit-scrollbar { width: 8px; }
+    .connlist::-webkit-scrollbar-thumb { background: var(--stroke); border-radius: 8px; }
+    .connlist .empty { color: var(--muted); font-size: 11px; }
+    .conn { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--stroke-soft); border-radius: 9px; background: rgba(255,255,255,0.03); font-size: 12px; }
+    .conn.broken { border-color: rgba(255,90,106,0.5); }
+    .conn .pair { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .conn .meta { color: var(--muted); font-size: 10.5px; white-space: nowrap; flex: 0 0 auto; }
+    .conn.broken .meta { color: var(--danger); }
+    .ghost.danger { border-color: rgba(255,90,106,0.5); color: #ff9aa4; }
+    .ghost.danger:hover { background: rgba(255,90,106,0.12); }
+
+    footer {
+      border-top: 1px solid var(--stroke-soft); padding: 9px 16px; font-size: 11px; color: var(--muted);
+      display: flex; align-items: center; gap: 8px; min-height: 34px;
+    }
+    footer .ok { color: var(--accent-2); }
+    footer .err { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <nav class="rail">
+      <div class="logo"></div>
+      <button data-tab="flow" class="active" title="Slide Flow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="7" height="14" rx="1.5"/><rect x="14" y="5" width="7" height="14" rx="1.5"/><path d="M10 12h4"/></svg>
+      </button>
+      <button data-tab="polish" title="Polish my deck">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z"/><path d="M18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z"/></svg>
+      </button>
+      <button data-tab="motion" title="Easing Studio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20C9 20 9 4 21 4"/></svg>
+      </button>
+      <button data-tab="numbers" title="Page Numbers">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 8l2-1v9"/><path d="M14 9a2 2 0 1 1 3 1.6L13 16h5"/></svg>
+      </button>
+      <button data-tab="layout" title="Layout">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="15" width="7" height="6" rx="1.5"/></svg>
+      </button>
+      <button data-tab="inspect" title="Flow Inspector">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+      </button>
+      <button data-tab="more" title="More">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      </button>
+    </nav>
+
+    <div class="main">
+      <header>
+        <div>
+          <div class="title" id="viewTitle">Slide Flow</div>
+          <div class="sub" id="viewSub">Connect slides with one click</div>
+        </div>
+        <div class="badge"><span class="dot"></span><span id="selBadge">0 frames</span></div>
+      </header>
+
+      <div class="views">
+        <!-- FLOW -->
+        <section class="view active" id="view-flow">
+          <div class="card">
+            <h3>Sequence</h3>
+            <p class="hint">Luma wires the frames in order. Order by their position on the canvas or by name.</p>
+            <div class="flow" id="flowChips"><span class="empty">Select frames to preview the order…</span></div>
+            <label class="row">Order by</label>
+            <div class="seg" id="seg-order">
+              <button data-v="position" class="active">Position</button>
+              <button data-v="name">Name</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Transition</h3>
+            <label class="row">Type</label>
+            <select id="transition">
+              <option value="SMART_ANIMATE">Smart Animate</option>
+              <option value="DISSOLVE">Dissolve</option>
+              <option value="MOVE_IN">Move in</option>
+              <option value="SLIDE_IN">Slide in</option>
+              <option value="PUSH">Push</option>
+              <option value="INSTANT">Instant (no animation)</option>
+            </select>
+
+            <div id="dirWrap" style="display:none">
+              <label class="row">Direction</label>
+              <div class="seg" id="seg-dir">
+                <button data-v="LEFT" class="active">←</button>
+                <button data-v="RIGHT">→</button>
+                <button data-v="TOP">↑</button>
+                <button data-v="BOTTOM">↓</button>
+              </div>
+            </div>
+
+            <label class="row">Easing</label>
+            <div class="chips" id="easingChips">
+              <button data-v="EASE_IN_AND_OUT" class="active">Ease in-out</button>
+              <button data-v="GENTLE">Gentle</button>
+              <button data-v="QUICK">Quick</button>
+              <button data-v="BOUNCY">Bouncy</button>
+              <button data-v="SLOW">Slow</button>
+              <button data-v="LINEAR">Linear</button>
+              <button data-v="CUSTOM">Custom curve →</button>
+            </div>
+
+            <label class="row">Duration</label>
+            <div class="range">
+              <input type="range" id="duration" min="0" max="2000" step="10" value="300" />
+              <span class="val" id="durationVal">300 ms</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Trigger</h3>
+            <div class="seg" id="seg-trigger">
+              <button data-v="ON_CLICK" class="active">On click</button>
+              <button data-v="ARROW_KEYS">Arrow keys</button>
+              <button data-v="AUTO_ADVANCE">Auto</button>
+            </div>
+            <div id="autoWrap" style="display:none">
+              <label class="row">Advance after</label>
+              <div class="range">
+                <input type="range" id="autoDelay" min="0.5" max="15" step="0.5" value="3" />
+                <span class="val" id="autoDelayVal">3.0 s</span>
+              </div>
+            </div>
+            <div class="switch">
+              <span>Loop deck<small>Last slide returns to the first</small></span>
+              <div class="toggle" id="tg-loop"></div>
+            </div>
+            <div class="switch">
+              <span>Back on ←<small>Arrow-key flows also go backward</small></span>
+              <div class="toggle" id="tg-back"></div>
+            </div>
+          </div>
+
+          <button class="primary" id="connectBtn">Connect slides</button>
+        </section>
+
+        <!-- POLISH -->
+        <section class="view" id="view-polish">
+          <div class="card">
+            <h3>Polish my deck</h3>
+            <p class="hint">Run several clean-up steps in one click. Reuses your Slide Flow, Page Number and Layout settings. Works on your selection, or the whole page if nothing is selected.</p>
+            <div class="switch"><span>Normalize size<small id="pNormDesc">All frames to 1920×1080</small></span><div class="toggle on" id="tg-pNorm"></div></div>
+            <div class="switch"><span>Tidy into a row<small>Even gap, left to right</small></span><div class="toggle on" id="tg-pTidy"></div></div>
+            <div class="switch"><span>Add page numbers<small>Using your Numbers settings</small></span><div class="toggle on" id="tg-pNumber"></div></div>
+            <div class="switch"><span>Connect slides<small>Using your Slide Flow settings</small></span><div class="toggle on" id="tg-pConnect"></div></div>
+          </div>
+          <button class="primary" id="polishBtn">Polish my deck</button>
+        </section>
+
+        <!-- MOTION -->
+        <section class="view" id="view-motion">
+          <div class="card">
+            <h3>Easing Studio</h3>
+            <p class="hint">Shape a custom cubic-bezier curve. It becomes the "Custom" easing in Slide Flow.</p>
+            <div class="studio">
+              <div class="curvebox">
+                <svg class="curve-svg" id="curve" viewBox="0 0 100 100">
+                  <defs><linearGradient id="g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#7c5cff"/><stop offset="1" stop-color="#29d4c0"/></linearGradient></defs>
+                  <line class="grid" x1="0" y1="50" x2="100" y2="50"/>
+                  <line class="grid" x1="50" y1="0" x2="50" y2="100"/>
+                  <line class="guide" x1="0" y1="100" x2="100" y2="0"/>
+                  <line class="handle-line" id="hl1" x1="0" y1="100" x2="42" y2="100"/>
+                  <line class="handle-line" id="hl2" x1="100" y1="0" x2="58" y2="0"/>
+                  <path class="curve" id="curvePath"/>
+                  <circle class="handle" id="p1" r="4.5"/>
+                  <circle class="handle" id="p2" r="4.5"/>
+                </svg>
+              </div>
+              <div class="meta">
+                <p class="bez-val" id="bezVal">cubic-bezier(0.42, 0, 0.58, 1)</p>
+                <div class="preview-track"><div class="preview-ball" id="ball"></div></div>
+                <button class="ghost" id="playBtn">▶ Preview</button>
+                <label class="row">Load preset</label>
+                <div class="chips" id="studioPresets">
+                  <button data-b="0.42,0,0.58,1">Ease in-out</button>
+                  <button data-b="0.42,0,1,1">Ease in</button>
+                  <button data-b="0,0,0.58,1">Ease out</button>
+                  <button data-b="0.34,1.56,0.64,1">Overshoot</button>
+                  <button data-b="0,0,1,1">Linear</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button class="primary" id="useCurveBtn">Use this curve in Slide Flow</button>
+        </section>
+
+        <!-- NUMBERS -->
+        <section class="view" id="view-numbers">
+          <div class="card">
+            <h3>Page numbers</h3>
+            <p class="hint">Adds (or updates) a number on every slide. Re-run any time to refresh.</p>
+            <label class="row">Format</label>
+            <div class="seg" id="seg-numfmt">
+              <button data-v="plain" class="active">1</button>
+              <button data-v="fraction">1 / N</button>
+              <button data-v="labeled">Slide 1</button>
+            </div>
+            <label class="row">Position</label>
+            <div class="seg" id="seg-numpos">
+              <button data-v="bottom-right" class="active">↘</button>
+              <button data-v="bottom-center">↓</button>
+              <button data-v="bottom-left">↙</button>
+              <button data-v="top-right">↗</button>
+            </div>
+            <label class="row">Order</label>
+            <div class="seg" id="seg-numorder">
+              <button data-v="position" class="active">Position</button>
+              <button data-v="name">Name</button>
+            </div>
+            <div class="switch">
+              <span>Skip first slide<small>Leave the cover unnumbered</small></span>
+              <div class="toggle" id="tg-skip"></div>
+            </div>
+          </div>
+          <button class="primary" id="numbersBtn">Add / update numbers</button>
+        </section>
+
+        <!-- LAYOUT -->
+        <section class="view" id="view-layout">
+          <div class="card">
+            <h3>Normalize size</h3>
+            <p class="hint">Force every selected frame to the same dimensions.</p>
+            <div class="two">
+              <div><label class="row">Width</label><input type="number" id="normW" value="1920" /></div>
+              <div><label class="row">Height</label><input type="number" id="normH" value="1080" /></div>
+            </div>
+            <div class="chips" style="margin-top:10px" id="sizePresets">
+              <button data-s="1920,1080">16:9 · 1920</button>
+              <button data-s="1280,720">16:9 · 1280</button>
+              <button data-s="1080,1080">Square</button>
+              <button data-s="1080,1920">Portrait</button>
+            </div>
+            <button class="primary" id="normBtn" style="margin-top:12px">Normalize frames</button>
+          </div>
+          <div class="card">
+            <h3>Tidy into a row</h3>
+            <p class="hint">Line slides up left-to-right with an even gap.</p>
+            <label class="row">Gap</label>
+            <div class="range">
+              <input type="range" id="gap" min="0" max="400" step="10" value="120" />
+              <span class="val" id="gapVal">120 px</span>
+            </div>
+            <button class="primary" id="tidyBtn" style="margin-top:12px">Tidy deck</button>
+          </div>
+        </section>
+
+        <!-- INSPECT -->
+        <section class="view" id="view-inspect">
+          <div class="card">
+            <h3>Flow Inspector</h3>
+            <p class="hint">Every prototype connection on this page. Repair links after deleting or reordering slides.</p>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+              <span class="badge"><span id="connCount">0</span> connections</span>
+              <button class="ghost" style="width:auto; padding:7px 12px;" id="refreshConn">Refresh</button>
+            </div>
+            <div id="connList" class="connlist"><span class="empty">Open this tab to read connections…</span></div>
+            <div class="two" style="margin-top:12px;">
+              <button class="ghost" id="removeBrokenBtn">Remove broken</button>
+              <button class="ghost danger" id="clearConnBtn">Clear all</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- MORE -->
+        <section class="view" id="view-more">
+          <div class="card soon">
+            <h3>Reorder manager <span class="soon-tag">SOON</span></h3>
+            <p class="hint">Drag slide thumbnails to reorder, then renumber names Slide 01…N.</p>
+          </div>
+          <div class="card soon">
+            <h3>Morph between two frames <span class="soon-tag">SOON</span></h3>
+            <p class="hint">Auto-match layers and build a Smart Animate morph between any two frames.</p>
+          </div>
+          <div class="card soon">
+            <h3>Table of contents <span class="soon-tag">SOON</span></h3>
+            <p class="hint">Generate an agenda slide from your slide titles.</p>
+          </div>
+        </section>
+      </div>
+
+      <footer><span id="status">Ready.</span></footer>
+    </div>
+  </div>
+
+  <script>
+    var state = {
+      tab: "flow",
+      order: "position",
+      transition: "SMART_ANIMATE",
+      direction: "LEFT",
+      easing: "EASE_IN_AND_OUT",
+      bezier: { x1: 0.42, y1: 0, x2: 0.58, y2: 1 },
+      duration: 300,
+      trigger: "ON_CLICK",
+      autoDelay: 3,
+      loop: false,
+      back: false,
+      numfmt: "plain",
+      numpos: "bottom-right",
+      numorder: "position",
+      skipFirst: false,
+      pNorm: true,
+      pTidy: true,
+      pNumber: true,
+      pConnect: true,
+    };
+
+    var PRESET_BEZIER = {
+      EASE_IN_AND_OUT: [0.42, 0, 0.58, 1],
+      EASE_IN: [0.42, 0, 1, 1],
+      EASE_OUT: [0, 0, 0.58, 1],
+      LINEAR: [0, 0, 1, 1],
+      GENTLE: [0.25, 0.1, 0.25, 1],
+      QUICK: [0.5, 0, 0.1, 1],
+      BOUNCY: [0.34, 1.56, 0.64, 1],
+      SLOW: [0.4, 0, 0.6, 1],
+    };
+
+    var TAB_META = {
+      flow: ["Slide Flow", "Connect slides with one click"],
+      polish: ["Polish my deck", "Several fixes in one click"],
+      motion: ["Easing Studio", "Design the motion curve"],
+      numbers: ["Page Numbers", "Number every slide"],
+      layout: ["Layout", "Size & arrange your deck"],
+      inspect: ["Flow Inspector", "Audit & repair connections"],
+      more: ["More tools", "Coming soon"],
+    };
+
+    function post(msg) { parent.postMessage({ pluginMessage: msg }, "*"); }
+    function $(id) { return document.getElementById(id); }
+    function setStatus(text, cls) {
+      var s = $("status");
+      s.textContent = text;
+      s.className = cls || "";
+    }
+
+    /* ---- tabs ---- */
+    document.querySelectorAll(".rail button").forEach(function (b) {
+      b.onclick = function () {
+        var tab = b.getAttribute("data-tab");
+        state.tab = tab;
+        document.querySelectorAll(".rail button").forEach(function (x) { x.classList.remove("active"); });
+        b.classList.add("active");
+        document.querySelectorAll(".view").forEach(function (v) { v.classList.remove("active"); });
+        $("view-" + tab).classList.add("active");
+        $("viewTitle").textContent = TAB_META[tab][0];
+        $("viewSub").textContent = TAB_META[tab][1];
+        if (tab === "inspect") requestConnections();
+        if (tab === "polish") updatePolishDesc();
+      };
+    });
+
+    /* ---- generic segmented control ---- */
+    function segment(id, key, onChange) {
+      var wrap = $(id);
+      wrap.querySelectorAll("button").forEach(function (b) {
+        b.onclick = function () {
+          wrap.querySelectorAll("button").forEach(function (x) { x.classList.remove("active"); });
+          b.classList.add("active");
+          state[key] = b.getAttribute("data-v");
+          if (onChange) onChange(state[key]);
+        };
+      });
+    }
+    segment("seg-order", "order");
+    segment("seg-dir", "direction");
+    segment("seg-trigger", "trigger", function (v) {
+      $("autoWrap").style.display = v === "AUTO_ADVANCE" ? "block" : "none";
+    });
+    segment("seg-numfmt", "numfmt");
+    segment("seg-numpos", "numpos");
+    segment("seg-numorder", "numorder");
+
+    /* ---- transition select (toggles direction) ---- */
+    $("transition").onchange = function () {
+      state.transition = this.value;
+      var directional = ["MOVE_IN", "SLIDE_IN", "PUSH"].indexOf(this.value) !== -1;
+      $("dirWrap").style.display = directional ? "block" : "none";
+    };
+
+    /* ---- easing chips ---- */
+    $("easingChips").querySelectorAll("button").forEach(function (b) {
+      b.onclick = function () {
+        $("easingChips").querySelectorAll("button").forEach(function (x) { x.classList.remove("active"); });
+        b.classList.add("active");
+        state.easing = b.getAttribute("data-v");
+        if (state.easing === "CUSTOM") { $("[data-tab=motion]"); document.querySelector('.rail button[data-tab="motion"]').click(); }
+        else if (PRESET_BEZIER[state.easing]) loadBezier(PRESET_BEZIER[state.easing]);
+      };
+    });
+
+    /* ---- ranges ---- */
+    $("duration").oninput = function () { state.duration = +this.value; $("durationVal").textContent = this.value + " ms"; };
+    $("autoDelay").oninput = function () { state.autoDelay = +this.value; $("autoDelayVal").textContent = (+this.value).toFixed(1) + " s"; };
+    $("gap").oninput = function () { $("gapVal").textContent = this.value + " px"; };
+
+    /* ---- toggles ---- */
+    function toggle(id, key) {
+      $(id).onclick = function () { state[key] = !state[key]; this.classList.toggle("on", state[key]); };
+    }
+    toggle("tg-loop", "loop");
+    toggle("tg-back", "back");
+    toggle("tg-skip", "skipFirst");
+    toggle("tg-pNorm", "pNorm");
+    toggle("tg-pTidy", "pTidy");
+    toggle("tg-pNumber", "pNumber");
+    toggle("tg-pConnect", "pConnect");
+
+    /* ---- bezier studio ---- */
+    var curve = $("curve"), p1 = $("p1"), p2 = $("p2"), hl1 = $("hl1"), hl2 = $("hl2"), curvePath = $("curvePath");
+    function renderCurve() {
+      var b = state.bezier;
+      var x1 = b.x1 * 100, y1 = 100 - b.y1 * 100, x2 = b.x2 * 100, y2 = 100 - b.y2 * 100;
+      p1.setAttribute("cx", x1); p1.setAttribute("cy", y1);
+      p2.setAttribute("cx", x2); p2.setAttribute("cy", y2);
+      hl1.setAttribute("x2", x1); hl1.setAttribute("y2", y1);
+      hl2.setAttribute("x2", x2); hl2.setAttribute("y2", y2);
+      curvePath.setAttribute("d", "M0,100 C" + x1 + "," + y1 + " " + x2 + "," + y2 + " 100,0");
+      $("bezVal").textContent = "cubic-bezier(" + b.x1.toFixed(2) + ", " + b.y1.toFixed(2) + ", " + b.x2.toFixed(2) + ", " + b.y2.toFixed(2) + ")";
+    }
+    function loadBezier(arr) {
+      state.bezier = { x1: arr[0], y1: arr[1], x2: arr[2], y2: arr[3] };
+      renderCurve();
+    }
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    function dragHandle(handle, which) {
+      handle.addEventListener("pointerdown", function (e) {
+        handle.setPointerCapture(e.pointerId);
+        function move(ev) {
+          var r = curve.getBoundingClientRect();
+          var px = clamp((ev.clientX - r.left) / r.width, 0, 1);
+          var py = clamp((ev.clientY - r.top) / r.height, -0.5, 1.5);
+          var y = 1 - py;
+          if (which === 1) { state.bezier.x1 = px; state.bezier.y1 = y; }
+          else { state.bezier.x2 = px; state.bezier.y2 = y; }
+          // editing the curve selects the Custom easing
+          state.easing = "CUSTOM";
+          $("easingChips").querySelectorAll("button").forEach(function (x) { x.classList.toggle("active", x.getAttribute("data-v") === "CUSTOM"); });
+          renderCurve();
+        }
+        function up(ev) { handle.releasePointerCapture(e.pointerId); curve.removeEventListener("pointermove", move); curve.removeEventListener("pointerup", up); }
+        curve.addEventListener("pointermove", move);
+        curve.addEventListener("pointerup", up);
+      });
+    }
+    dragHandle(p1, 1);
+    dragHandle(p2, 2);
+    $("studioPresets").querySelectorAll("button").forEach(function (b) {
+      b.onclick = function () { loadBezier(b.getAttribute("data-b").split(",").map(Number)); };
+    });
+    $("playBtn").onclick = function () {
+      var ball = $("ball"); var b = state.bezier;
+      ball.style.transition = "none"; ball.style.transform = "translateX(0)";
+      // force reflow
+      void ball.offsetWidth;
+      ball.style.transition = "transform " + Math.max(200, state.duration) + "ms cubic-bezier(" + clamp(b.x1,0,1) + "," + b.y1 + "," + clamp(b.x2,0,1) + "," + b.y2 + ")";
+      ball.style.transform = "translateX(calc(100% + 100px))";
+    };
+    $("useCurveBtn").onclick = function () {
+      state.easing = "CUSTOM";
+      document.querySelector('.rail button[data-tab="flow"]').click();
+      $("easingChips").querySelectorAll("button").forEach(function (x) { x.classList.toggle("active", x.getAttribute("data-v") === "CUSTOM"); });
+      setStatus("Custom curve set as Slide Flow easing.", "ok");
+    };
+    renderCurve();
+
+    /* ---- size presets ---- */
+    $("sizePresets").querySelectorAll("button").forEach(function (b) {
+      b.onclick = function () { var s = b.getAttribute("data-s").split(","); $("normW").value = s[0]; $("normH").value = s[1]; };
+    });
+
+    /* ---- action buttons ---- */
+    function connectOptionsObj() {
+      return {
+        order: state.order, transition: state.transition, direction: state.direction,
+        easing: state.easing, bezier: state.bezier, duration: state.duration,
+        trigger: state.trigger, autoDelay: state.autoDelay, loop: state.loop, back: state.back,
+        flowName: "Slide Flow",
+      };
+    }
+    $("connectBtn").onclick = function () {
+      post({ type: "connect-slides", options: connectOptionsObj() });
+      setStatus("Connecting slides\u2026");
+    };
+    function updatePolishDesc() {
+      $("pNormDesc").textContent = "All frames to " + (+$("normW").value || 1920) + "\u00d7" + (+$("normH").value || 1080);
+    }
+    $("polishBtn").onclick = function () {
+      post({ type: "polish-deck", options: {
+        normalize: state.pNorm, width: +$("normW").value || 1920, height: +$("normH").value || 1080,
+        tidy: state.pTidy, gap: +$("gap").value,
+        number: state.pNumber, numberFormat: state.numfmt, numberPosition: state.numpos, skipFirst: state.skipFirst,
+        connect: state.pConnect, connectOptions: connectOptionsObj(),
+      } });
+      setStatus("Polishing deck\u2026");
+    };
+
+    /* ---- flow inspector ---- */
+    function requestConnections() { post({ type: "get-connections" }); }
+    function esc(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+    function renderConnections(list) {
+      var box = $("connList");
+      $("connCount").textContent = list.length;
+      box.innerHTML = "";
+      if (!list.length) { box.innerHTML = '<span class="empty">No connections yet. Use Slide Flow to create some.</span>'; return; }
+      list.forEach(function (c) {
+        var row = document.createElement("div");
+        row.className = "conn" + (c.broken ? " broken" : "");
+        var pair = document.createElement("div");
+        pair.className = "pair";
+        pair.innerHTML = "<b>" + esc(c.fromName) + "</b> \u2192 " + esc(c.toName);
+        var meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = c.broken ? "broken" : (c.transition + " \u00b7 " + c.trigger);
+        row.appendChild(pair); row.appendChild(meta); box.appendChild(row);
+      });
+    }
+    $("refreshConn").onclick = function () { requestConnections(); setStatus("Reading connections\u2026"); };
+    $("removeBrokenBtn").onclick = function () { post({ type: "remove-broken" }); setStatus("Removing broken links\u2026"); };
+    $("clearConnBtn").onclick = function () { post({ type: "clear-connections" }); setStatus("Clearing connections\u2026"); };
+    $("numbersBtn").onclick = function () {
+      post({ type: "page-numbers", options: { format: state.numfmt, position: state.numpos, skipFirst: state.skipFirst, order: state.numorder } });
+      setStatus("Numbering…");
+    };
+    $("normBtn").onclick = function () {
+      post({ type: "normalize", options: { width: +$("normW").value || 1920, height: +$("normH").value || 1080 } });
+      setStatus("Normalizing…");
+    };
+    $("tidyBtn").onclick = function () {
+      post({ type: "tidy", options: { gap: +$("gap").value } });
+      setStatus("Tidying…");
+    };
+
+    /* ---- flow chip preview ---- */
+    function renderFlow(names) {
+      var box = $("flowChips");
+      box.innerHTML = "";
+      if (!names || !names.length) { box.innerHTML = '<span class="empty">Select frames to preview the order…</span>'; return; }
+      names.forEach(function (n, i) {
+        if (i) { var a = document.createElement("span"); a.className = "arrow"; a.textContent = "→"; box.appendChild(a); }
+        var s = document.createElement("span"); s.className = "slide"; s.textContent = n; box.appendChild(s);
+      });
+    }
+
+    /* ---- messages from plugin ---- */
+    window.onmessage = function (e) {
+      var msg = e.data.pluginMessage;
+      if (!msg) return;
+      if (msg.type === "selection") {
+        var info = msg.info;
+        var count = info.selectedFrames || 0;
+        $("selBadge").textContent = count ? count + " selected" : (info.totalFrames + " on page");
+        renderFlow(info.names);
+      } else if (msg.type === "done") {
+        setStatus(msg.message, "ok");
+      } else if (msg.type === "connections") {
+        renderConnections(msg.list);
+        if (msg.message) setStatus(msg.message, "ok");
+      } else if (msg.type === "error") {
+        setStatus(msg.message, "err");
+      }
+    };
+  </script>
+</body>
+</html>
