@@ -499,6 +499,7 @@ export interface LayerDiff {
   opacityFrom: number;
   opacityTo: number;
   hidden: boolean;
+  jitter: boolean;
 }
 
 export interface RenameSuggestion {
@@ -517,6 +518,7 @@ export interface MorphReport {
   exits?: LayerDiff[];
   enters?: LayerDiff[];
   staticCount?: number;
+  jitterCount?: number;
   suggestions?: RenameSuggestion[];
 }
 
@@ -535,6 +537,14 @@ interface UnmatchedInfo {
 }
 
 const MORPH_GUIDE_MARK = "luma-morph-guides";
+
+const GUIDE_MOVED: RGB = { r: 0.05, g: 0.6, b: 1 };
+const GUIDE_EXIT: RGB = { r: 0.95, g: 0.28, b: 0.13 };
+const GUIDE_ENTER: RGB = { r: 0.18, g: 0.78, b: 0.44 };
+
+// Remembered frame pair so on-canvas guides can live-update as the design changes.
+let guideFrameA: string | null = null;
+let guideFrameB: string | null = null;
 
 function pushToMap(map: Map<string, SceneNode[]>, key: string, node: SceneNode): void {
   const list = map.get(key);
@@ -594,62 +604,76 @@ function buildRenameSuggestions(exitNodes: UnmatchedInfo[], enterNodes: Unmatche
   return out;
 }
 
-export async function analyzeMorph(): Promise<MorphReport> {
-  const pair = twoFramesFromSelection();
-  if (!pair) return { ok: false, message: "Select exactly 2 frames to compare." };
-  const [a, b] = pair;
+interface FramePairing {
+  matched: { na: SceneNode; nb: SceneNode }[];
+  exitNodes: SceneNode[];
+  enterNodes: SceneNode[];
+}
 
+// Match layers between two frames by type + name (same rule Smart Animate uses).
+function pairFrames(a: DeckFrame, b: DeckFrame): FramePairing {
   const mapA = new Map<string, SceneNode[]>();
   const mapB = new Map<string, SceneNode[]>();
   for (const n of a.findAll(() => true)) pushToMap(mapA, n.type + "::" + n.name, n);
   for (const n of b.findAll(() => true)) pushToMap(mapB, n.type + "::" + n.name, n);
-
-  const moved: LayerDiff[] = [];
-  const exits: LayerDiff[] = [];
-  const enters: LayerDiff[] = [];
-  const exitNodes: UnmatchedInfo[] = [];
-  const enterNodes: UnmatchedInfo[] = [];
-  let staticCount = 0;
-
+  const matched: { na: SceneNode; nb: SceneNode }[] = [];
+  const exitNodes: SceneNode[] = [];
+  const enterNodes: SceneNode[] = [];
   const keys = new Set<string>();
   for (const k of mapA.keys()) keys.add(k);
   for (const k of mapB.keys()) keys.add(k);
-
   for (const key of keys) {
     const la = mapA.get(key) || [];
     const lb = mapB.get(key) || [];
     const paired = Math.min(la.length, lb.length);
-    for (let i = 0; i < paired; i++) {
-      const na = la[i];
-      const nb = lb[i];
-      const ra = relBox(na, a);
-      const rb = relBox(nb, b);
-      const oa = nodeOpacity(na);
-      const ob = nodeOpacity(nb);
-      const dx = ra && rb ? Math.round(rb.x - ra.x) : 0;
-      const dy = ra && rb ? Math.round(rb.y - ra.y) : 0;
-      const dw = ra && rb ? Math.round(rb.w - ra.w) : 0;
-      const dh = ra && rb ? Math.round(rb.h - ra.h) : 0;
-      const changed = dx !== 0 || dy !== 0 || dw !== 0 || dh !== 0 || Math.abs(oa - ob) > 0.001;
-      const hidden = oa === 0 || ob === 0 || !na.visible || !nb.visible;
-      if (changed) {
-        moved.push({ name: na.name, type: na.type, status: "moved", aId: na.id, bId: nb.id, dx, dy, dw, dh, opacityFrom: oa, opacityTo: ob, hidden });
-      } else {
-        staticCount++;
-      }
+    for (let i = 0; i < paired; i++) matched.push({ na: la[i], nb: lb[i] });
+    for (let i = paired; i < la.length; i++) exitNodes.push(la[i]);
+    for (let i = paired; i < lb.length; i++) enterNodes.push(lb[i]);
+  }
+  return { matched, exitNodes, enterNodes };
+}
+
+function analyzeMorphFrames(a: DeckFrame, b: DeckFrame, threshold: number): MorphReport {
+  const { matched, exitNodes: exNodes, enterNodes: enNodes } = pairFrames(a, b);
+
+  const moved: LayerDiff[] = [];
+  const exits: LayerDiff[] = [];
+  const enters: LayerDiff[] = [];
+  const exitInfos: UnmatchedInfo[] = [];
+  const enterInfos: UnmatchedInfo[] = [];
+  let staticCount = 0;
+  let jitterCount = 0;
+
+  for (const { na, nb } of matched) {
+    const ra = relBox(na, a);
+    const rb = relBox(nb, b);
+    const oa = nodeOpacity(na);
+    const ob = nodeOpacity(nb);
+    const dx = ra && rb ? Math.round(rb.x - ra.x) : 0;
+    const dy = ra && rb ? Math.round(rb.y - ra.y) : 0;
+    const dw = ra && rb ? Math.round(rb.w - ra.w) : 0;
+    const dh = ra && rb ? Math.round(rb.h - ra.h) : 0;
+    const opacityChanged = Math.abs(oa - ob) > 0.001;
+    const changed = dx !== 0 || dy !== 0 || dw !== 0 || dh !== 0 || opacityChanged;
+    const hidden = oa === 0 || ob === 0 || !na.visible || !nb.visible;
+    if (changed) {
+      const geoMag = Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dw), Math.abs(dh));
+      const jitter = geoMag > 0 && geoMag <= threshold;
+      if (jitter) jitterCount++;
+      moved.push({ name: na.name, type: na.type, status: "moved", aId: na.id, bId: nb.id, dx, dy, dw, dh, opacityFrom: oa, opacityTo: ob, hidden, jitter });
+    } else {
+      staticCount++;
     }
-    for (let i = paired; i < la.length; i++) {
-      const na = la[i];
-      const oa = nodeOpacity(na);
-      exits.push({ name: na.name, type: na.type, status: "exit", aId: na.id, bId: null, dx: 0, dy: 0, dw: 0, dh: 0, opacityFrom: oa, opacityTo: 0, hidden: oa === 0 || !na.visible });
-      exitNodes.push({ id: na.id, name: na.name, type: na.type, box: relBox(na, a) });
-    }
-    for (let i = paired; i < lb.length; i++) {
-      const nb = lb[i];
-      const ob = nodeOpacity(nb);
-      enters.push({ name: nb.name, type: nb.type, status: "enter", aId: null, bId: nb.id, dx: 0, dy: 0, dw: 0, dh: 0, opacityFrom: 0, opacityTo: ob, hidden: ob === 0 || !nb.visible });
-      enterNodes.push({ id: nb.id, name: nb.name, type: nb.type, box: relBox(nb, b) });
-    }
+  }
+  for (const na of exNodes) {
+    const oa = nodeOpacity(na);
+    exits.push({ name: na.name, type: na.type, status: "exit", aId: na.id, bId: null, dx: 0, dy: 0, dw: 0, dh: 0, opacityFrom: oa, opacityTo: 0, hidden: oa === 0 || !na.visible, jitter: false });
+    exitInfos.push({ id: na.id, name: na.name, type: na.type, box: relBox(na, a) });
+  }
+  for (const nb of enNodes) {
+    const ob = nodeOpacity(nb);
+    enters.push({ name: nb.name, type: nb.type, status: "enter", aId: null, bId: nb.id, dx: 0, dy: 0, dw: 0, dh: 0, opacityFrom: 0, opacityTo: ob, hidden: ob === 0 || !nb.visible, jitter: false });
+    enterInfos.push({ id: nb.id, name: nb.name, type: nb.type, box: relBox(nb, b) });
   }
 
   return {
@@ -660,8 +684,51 @@ export async function analyzeMorph(): Promise<MorphReport> {
     exits,
     enters,
     staticCount,
-    suggestions: buildRenameSuggestions(exitNodes, enterNodes),
+    jitterCount,
+    suggestions: buildRenameSuggestions(exitInfos, enterInfos),
   };
+}
+
+export async function analyzeMorph(threshold = 2): Promise<MorphReport> {
+  const pair = twoFramesFromSelection();
+  if (!pair) return { ok: false, message: "Select exactly 2 frames to compare." };
+  return analyzeMorphFrames(pair[0], pair[1], threshold);
+}
+
+// Snap layers that barely move (<= threshold px) so they hold perfectly still and
+// don't jitter during a Smart Animate. We align the "to" copy onto the "from" copy.
+export async function fixJitter(threshold: number): Promise<string> {
+  const pair = twoFramesFromSelection();
+  if (!pair) throw new Error("Select exactly 2 frames to compare.");
+  const [a, b] = pair;
+  const { matched } = pairFrames(a, b);
+  let fixed = 0;
+  for (const { na, nb } of matched) {
+    const ra = relBox(na, a);
+    const rb = relBox(nb, b);
+    if (!ra || !rb) continue;
+    const dx = rb.x - ra.x;
+    const dy = rb.y - ra.y;
+    const dw = rb.w - ra.w;
+    const dh = rb.h - ra.h;
+    const geoMag = Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dw), Math.abs(dh));
+    if (geoMag === 0 || geoMag > threshold) continue;
+    const target = nb as SceneNode & LayoutMixin;
+    if ((Math.abs(dw) > 0.001 || Math.abs(dh) > 0.001) && "resize" in nb) {
+      try {
+        target.resize(Math.max(ra.w, 0.01), Math.max(ra.h, 0.01));
+      } catch (e) {
+        /* some node types can't be resized */
+      }
+    }
+    const rb2 = relBox(nb, b);
+    if (rb2) {
+      target.x -= rb2.x - ra.x;
+      target.y -= rb2.y - ra.y;
+    }
+    fixed++;
+  }
+  return fixed ? `Snapped ${fixed} jittery layer${fixed > 1 ? "s" : ""} into place.` : "No jitter found under the threshold.";
 }
 
 export async function selectLayers(ids: string[]): Promise<void> {
@@ -722,6 +789,13 @@ function makeRing(p: { x: number; y: number }, color: RGB): EllipseNode {
 }
 
 export async function clearMorphGuides(): Promise<string> {
+  const removed = removeGuideNodes();
+  guideFrameA = null;
+  guideFrameB = null;
+  return removed ? "Cleared morph guides." : "No morph guides to clear.";
+}
+
+function removeGuideNodes(): number {
   let removed = 0;
   for (const c of figma.currentPage.children) {
     if (c.getPluginData(MORPH_GUIDE_MARK) === "1") {
@@ -729,46 +803,78 @@ export async function clearMorphGuides(): Promise<string> {
       removed++;
     }
   }
-  return removed ? "Cleared morph guides." : "No morph guides to clear.";
+  return removed;
+}
+
+// Draw motion-path guides between two specific frames. Synchronous so the live
+// documentchange watcher can redraw cheaply on every drag tick.
+function drawGuidesForFrames(a: DeckFrame, b: DeckFrame): number {
+  const { matched, exitNodes, enterNodes } = pairFrames(a, b);
+  removeGuideNodes();
+  const created: SceneNode[] = [];
+
+  for (const { na, nb } of matched) {
+    const ra = relBox(na, a);
+    const rb = relBox(nb, b);
+    if (!ra || !rb) continue;
+    const moved =
+      Math.round(rb.x - ra.x) !== 0 ||
+      Math.round(rb.y - ra.y) !== 0 ||
+      Math.round(rb.w - ra.w) !== 0 ||
+      Math.round(rb.h - ra.h) !== 0;
+    if (!moved) continue;
+    const ca = absCenter(na);
+    const cb = absCenter(nb);
+    if (ca && cb) {
+      created.push(makeLine(ca, cb, GUIDE_MOVED));
+      created.push(makeDot(cb, GUIDE_MOVED));
+    }
+  }
+  for (const na of exitNodes) {
+    const ca = absCenter(na);
+    if (ca) created.push(makeRing(ca, GUIDE_EXIT));
+  }
+  for (const nb of enterNodes) {
+    const cb = absCenter(nb);
+    if (cb) created.push(makeDot(cb, GUIDE_ENTER));
+  }
+
+  if (!created.length) return 0;
+  const group = figma.group(created, figma.currentPage);
+  group.name = "Luma Motion Paths";
+  group.setPluginData(MORPH_GUIDE_MARK, "1");
+  group.locked = true;
+  return created.length;
 }
 
 export async function drawMorphGuides(): Promise<string> {
-  const report = await analyzeMorph();
-  if (!report.ok) throw new Error(report.message || "Select 2 frames.");
-  await clearMorphGuides();
+  const pair = twoFramesFromSelection();
+  if (!pair) throw new Error("Select exactly 2 frames to compare.");
+  guideFrameA = pair[0].id;
+  guideFrameB = pair[1].id;
+  const n = drawGuidesForFrames(pair[0], pair[1]);
+  if (!n) throw new Error("Nothing is moving between these frames yet.");
+  return `Live motion paths on \u2014 drag an element in "${pair[0].name}" to preview where it lands in "${pair[1].name}".`;
+}
 
-  const MOVED: RGB = { r: 0.05, g: 0.6, b: 1 };
-  const EXIT: RGB = { r: 0.95, g: 0.28, b: 0.13 };
-  const ENTER: RGB = { r: 0.18, g: 0.78, b: 0.44 };
-  const created: SceneNode[] = [];
-  const all = [...(report.moved || []), ...(report.exits || []), ...(report.enters || [])];
-
-  for (const d of all) {
-    const aNode = d.aId ? ((await figma.getNodeByIdAsync(d.aId)) as SceneNode | null) : null;
-    const bNode = d.bId ? ((await figma.getNodeByIdAsync(d.bId)) as SceneNode | null) : null;
-    const color = d.status === "moved" ? MOVED : d.status === "exit" ? EXIT : ENTER;
-    if (aNode && bNode) {
-      const ca = absCenter(aNode);
-      const cb = absCenter(bNode);
-      if (ca && cb) {
-        created.push(makeLine(ca, cb, color));
-        created.push(makeDot(cb, color));
-      }
-    } else if (aNode) {
-      const ca = absCenter(aNode);
-      if (ca) created.push(makeRing(ca, color));
-    } else if (bNode) {
-      const cb = absCenter(bNode);
-      if (cb) created.push(makeDot(cb, color));
-    }
+// Redraw against the remembered frame pair. Returns false when a frame is gone so
+// the caller can stop the live watcher.
+export async function redrawMorphGuides(): Promise<boolean> {
+  if (!guideFrameA || !guideFrameB) return false;
+  const a = await figma.getNodeByIdAsync(guideFrameA);
+  const b = await figma.getNodeByIdAsync(guideFrameB);
+  if (!a || !b || !isDeckFrame(a as SceneNode) || !isDeckFrame(b as SceneNode)) {
+    removeGuideNodes();
+    guideFrameA = null;
+    guideFrameB = null;
+    return false;
   }
+  drawGuidesForFrames(a as DeckFrame, b as DeckFrame);
+  return true;
+}
 
-  if (!created.length) throw new Error("Nothing to visualize between these frames.");
-  const group = figma.group(created, figma.currentPage);
-  group.name = "Luma Morph Guides";
-  group.setPluginData(MORPH_GUIDE_MARK, "1");
-  group.locked = true;
-  return `Drew ${created.length} guide marks (blue = moves, red = exits, green = enters).`;
+export function morphGuidesActive(): boolean {
+  return guideFrameA !== null && guideFrameB !== null;
 }
 
 // ---------------------------------------------------------------------------

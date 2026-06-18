@@ -16,6 +16,9 @@ import {
   renameLayer,
   drawMorphGuides,
   clearMorphGuides,
+  redrawMorphGuides,
+  morphGuidesActive,
+  fixJitter,
   organizeConnected,
   getDeckInfo,
   ConnectOptions,
@@ -34,6 +37,34 @@ function pushSelection(): void {
 
 figma.on("selectionchange", pushSelection);
 pushSelection();
+
+// --- Live morph guides: redraw the on-canvas motion paths as the design changes ---
+let guidesLive = false;
+let redrawScheduled = false;
+let suppressGuideRedrawUntil = 0;
+
+function scheduleGuideRedraw(): void {
+  if (!guidesLive || redrawScheduled) return;
+  if (Date.now() < suppressGuideRedrawUntil) return;
+  redrawScheduled = true;
+  setTimeout(async () => {
+    redrawScheduled = false;
+    if (!guidesLive) return;
+    // Ignore the documentchange events caused by our own guide nodes for a moment.
+    suppressGuideRedrawUntil = Date.now() + 350;
+    try {
+      const stillThere = await redrawMorphGuides();
+      if (!stillThere) {
+        guidesLive = false;
+        figma.ui.postMessage({ type: "done", message: "Motion paths cleared \u2014 a frame was removed." });
+      }
+    } catch (e) {
+      /* ignore transient redraw errors mid-edit */
+    }
+  }, 120);
+}
+
+figma.on("documentchange", scheduleGuideRedraw);
 
 interface UIMessage {
   type: string;
@@ -95,7 +126,9 @@ figma.ui.onmessage = async (msg: UIMessage) => {
         break;
       }
       case "morph-analyze": {
-        const report = await analyzeMorph();
+        const opts = (msg.options as { threshold?: number }) || {};
+        const threshold = typeof opts.threshold === "number" ? opts.threshold : 2;
+        const report = await analyzeMorph(threshold);
         figma.ui.postMessage({ type: "morph", report });
         break;
       }
@@ -104,20 +137,35 @@ figma.ui.onmessage = async (msg: UIMessage) => {
         break;
       }
       case "morph-rename": {
-        const o = msg.options as { id: string; name: string };
+        const o = msg.options as { id: string; name: string; threshold?: number };
         const result = await renameLayer(o.id, o.name);
         figma.notify(result);
-        const report = await analyzeMorph();
+        const threshold = typeof o.threshold === "number" ? o.threshold : 2;
+        const report = await analyzeMorph(threshold);
         figma.ui.postMessage({ type: "morph", report, message: result });
+        if (guidesLive) await redrawMorphGuides();
+        break;
+      }
+      case "morph-fix-jitter": {
+        const o = (msg.options as { threshold?: number }) || {};
+        const threshold = typeof o.threshold === "number" ? o.threshold : 2;
+        const result = await fixJitter(threshold);
+        figma.notify(result);
+        const report = await analyzeMorph(threshold);
+        figma.ui.postMessage({ type: "morph", report, message: result });
+        if (guidesLive) await redrawMorphGuides();
         break;
       }
       case "morph-guides": {
         const result = await drawMorphGuides();
+        guidesLive = morphGuidesActive();
+        suppressGuideRedrawUntil = Date.now() + 350;
         figma.notify(result);
         figma.ui.postMessage({ type: "done", message: result });
         break;
       }
       case "morph-clear-guides": {
+        guidesLive = false;
         const result = await clearMorphGuides();
         figma.notify(result);
         figma.ui.postMessage({ type: "done", message: result });

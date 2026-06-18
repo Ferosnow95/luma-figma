@@ -225,6 +225,24 @@
     .summary .stat { font-size: 11px; padding: 3px 8px; border-radius: 6px; background: var(--bg); border: 1px solid var(--stroke); }
     .summary .stat b { font-variant-numeric: tabular-nums; }
 
+    /* jitter flags */
+    .diff.jit { border-color: #d9a514; }
+    .diff.jit .pill { background: #d9a514; }
+    .diff .tag { flex: 0 0 auto; font-size: 8.5px; font-weight: 700; letter-spacing: 0.4px; color: #d9a514; border: 1px solid #d9a514; border-radius: 4px; padding: 1px 4px; text-transform: uppercase; }
+    .summary .stat.warn { color: #d9a514; border-color: #d9a514; }
+
+    /* horizontal responsiveness */
+    header .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .studio { flex-wrap: wrap; }
+    .curvebox { max-width: 100%; }
+    .studio .meta { flex: 1 1 150px; }
+    .two { flex-wrap: wrap; }
+    .two > div { min-width: 110px; }
+
+    /* drag-to-resize grip */
+    #resizeGrip { position: fixed; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 20; }
+    #resizeGrip::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); opacity: 0.7; }
+
     footer {
       border-top: 1px solid var(--stroke); padding: 8px 16px; font-size: 11px; color: var(--muted);
       display: flex; align-items: center; gap: 8px; min-height: 32px;
@@ -487,7 +505,7 @@
         <section class="view" id="view-morph">
           <div class="card">
             <h3>Morph Inspector</h3>
-            <p class="hint">Select <b>two frames</b> (a "from" and a "to"). Luma matches layers by name and type, shows where each one moves, and flags layers that hide or fade out.</p>
+            <p class="hint">Select <b>two frames</b> (a "from" and a "to"). Luma matches layers by name and type, shows where each moves, flags layers that hide or fade, and catches tiny sub-pixel jitter. Turn on live paths, then drag — the arrows follow.</p>
             <div id="morphHeader" class="flow" style="margin-bottom:10px;"><span class="empty">Select two frames to compare…</span></div>
             <div class="summary" id="morphSummary"></div>
             <div class="chips" id="morphFilter">
@@ -496,11 +514,18 @@
               <button data-v="exit">Exits</button>
               <button data-v="enter">Enters</button>
               <button data-v="hidden">Hidden</button>
+              <button data-v="jitter">Jitter</button>
             </div>
             <div id="diffList" class="difflist" style="margin-top:10px;"><span class="empty">Select two frames to compare…</span></div>
+            <label class="row">Jitter threshold</label>
+            <div class="range">
+              <input type="range" id="jitterThreshold" min="1" max="8" step="1" value="2" />
+              <span class="val" id="jitterThresholdVal">2 px</span>
+            </div>
+            <button class="ghost" id="fixJitterBtn">Snap jitter (hold tiny moves still)</button>
             <div class="two" style="margin-top:12px;">
-              <button class="ghost" id="morphGuidesBtn">Show arrows</button>
-              <button class="ghost" id="morphClearBtn">Clear arrows</button>
+              <button class="ghost" id="morphGuidesBtn">Show live paths</button>
+              <button class="ghost" id="morphClearBtn">Clear paths</button>
             </div>
             <button class="ghost" id="morphRefreshBtn" style="margin-top:8px;">Refresh</button>
           </div>
@@ -546,6 +571,7 @@
       <footer><span id="status">Ready.</span></footer>
     </div>
   </div>
+  <div id="resizeGrip" title="Drag to resize"></div>
 
   <script>
     var state = {
@@ -569,6 +595,7 @@
       pNumber: true,
       pConnect: true,
       morphFilter: "all",
+      jitterThreshold: 2,
     };
 
     var PRESET_BEZIER = {
@@ -802,7 +829,7 @@
 
     /* ---- morph inspector ---- */
     var morphReport = null;
-    function requestMorph() { post({ type: "morph-analyze" }); }
+    function requestMorph() { post({ type: "morph-analyze", options: { threshold: state.jitterThreshold } }); }
     segment("morphFilter", "morphFilter", function () { renderDiffList(); });
 
     function describeDiff(d) {
@@ -812,7 +839,8 @@
       if (d.dx || d.dy) parts.push("moves " + d.dx + ", " + d.dy);
       if (d.dw || d.dh) parts.push("resizes " + (d.dw >= 0 ? "+" : "") + d.dw + ", " + (d.dh >= 0 ? "+" : "") + d.dh);
       if (Math.abs(d.opacityFrom - d.opacityTo) > 0.001) parts.push("opacity " + Math.round(d.opacityFrom * 100) + "\u2192" + Math.round(d.opacityTo * 100) + "%");
-      return parts.join(" \u00b7 ") || "changes";
+      var s = parts.join(" \u00b7 ") || "changes";
+      return d.jitter ? "tiny \u2014 " + s : s;
     }
 
     function renderDiffList() {
@@ -823,20 +851,23 @@
       var items = all.filter(function (d) {
         if (f === "all") return true;
         if (f === "hidden") return d.hidden;
+        if (f === "jitter") return d.jitter;
         return d.status === f;
       });
       box.innerHTML = "";
       if (!items.length) { box.innerHTML = '<span class="empty">Nothing here for this filter.</span>'; return; }
       items.forEach(function (d) {
         var row = document.createElement("div");
-        row.className = "diff" + (d.hidden ? " hid" : "");
+        row.className = "diff" + (d.hidden ? " hid" : "") + (d.jitter ? " jit" : "");
         var pill = document.createElement("div"); pill.className = "pill " + d.status;
         var info = document.createElement("div"); info.className = "info";
         var nm = document.createElement("div"); nm.className = "nm"; nm.textContent = d.name;
         var dl = document.createElement("div"); dl.className = "dl"; dl.textContent = describeDiff(d);
         info.appendChild(nm); info.appendChild(dl);
         var ty = document.createElement("div"); ty.className = "ty"; ty.textContent = d.type.toLowerCase();
-        row.appendChild(pill); row.appendChild(info); row.appendChild(ty);
+        row.appendChild(pill); row.appendChild(info);
+        if (d.jitter) { var tag = document.createElement("div"); tag.className = "tag"; tag.textContent = "jitter"; row.appendChild(tag); }
+        row.appendChild(ty);
         row.onclick = function () {
           var ids = [d.aId, d.bId].filter(Boolean);
           if (ids.length) { post({ type: "morph-select", options: { ids: ids } }); setStatus("Selected " + d.name, "ok"); }
@@ -855,7 +886,7 @@
         var txt = document.createElement("div"); txt.className = "txt";
         txt.innerHTML = "<b>" + esc(s.bName) + "</b> \u2192 " + esc(s.toName) + "<small>" + esc(s.reason) + "</small>";
         var btn = document.createElement("button"); btn.className = "linkbtn"; btn.textContent = "Rename";
-        btn.onclick = function () { post({ type: "morph-rename", options: { id: s.bId, name: s.toName } }); setStatus("Renaming\u2026"); };
+        btn.onclick = function () { post({ type: "morph-rename", options: { id: s.bId, name: s.toName, threshold: state.jitterThreshold } }); setStatus("Renaming\u2026"); };
         row.appendChild(txt); row.appendChild(btn); box.appendChild(row);
       });
     }
@@ -872,17 +903,22 @@
       }
       hdr.innerHTML = '<span class="slide">' + esc(report.fromName) + '</span><span class="arrow">\u2192</span><span class="slide">' + esc(report.toName) + '</span>';
       var moved = report.moved || [], exits = report.exits || [], enters = report.enters || [];
+      var jit = report.jitterCount || 0;
       sum.innerHTML =
         '<span class="stat"><b>' + moved.length + '</b> moved</span>' +
         '<span class="stat"><b>' + exits.length + '</b> exits</span>' +
         '<span class="stat"><b>' + enters.length + '</b> enters</span>' +
-        '<span class="stat"><b>' + (report.staticCount || 0) + '</b> static</span>';
+        '<span class="stat"><b>' + (report.staticCount || 0) + '</b> static</span>' +
+        (jit ? '<span class="stat warn"><b>' + jit + '</b> jitter</span>' : '');
       renderDiffList();
       renderSuggestions(report.suggestions || []);
     }
 
-    $("morphGuidesBtn").onclick = function () { post({ type: "morph-guides" }); setStatus("Drawing arrows\u2026"); };
-    $("morphClearBtn").onclick = function () { post({ type: "morph-clear-guides" }); setStatus("Clearing arrows\u2026"); };
+    $("jitterThreshold").oninput = function () { state.jitterThreshold = +this.value; $("jitterThresholdVal").textContent = this.value + " px"; };
+    $("jitterThreshold").onchange = function () { if (state.tab === "morph") requestMorph(); };
+    $("fixJitterBtn").onclick = function () { post({ type: "morph-fix-jitter", options: { threshold: state.jitterThreshold } }); setStatus("Snapping jitter\u2026"); };
+    $("morphGuidesBtn").onclick = function () { post({ type: "morph-guides" }); setStatus("Tracking motion paths\u2026"); };
+    $("morphClearBtn").onclick = function () { post({ type: "morph-clear-guides" }); setStatus("Clearing paths\u2026"); };
     $("morphRefreshBtn").onclick = function () { requestMorph(); setStatus("Analyzing\u2026"); };
 
     /* ---- organize connected screens ---- */
@@ -926,6 +962,23 @@
         setStatus(msg.message, "err");
       }
     };
+
+    /* ---- drag-to-resize grip ---- */
+    (function () {
+      var grip = $("resizeGrip");
+      if (!grip) return;
+      var resizing = false;
+      grip.addEventListener("pointerdown", function (e) { resizing = true; grip.setPointerCapture(e.pointerId); e.preventDefault(); });
+      grip.addEventListener("pointermove", function (e) {
+        if (!resizing) return;
+        var w = Math.max(320, Math.round(e.clientX + 8));
+        var h = Math.max(420, Math.round(e.clientY + 8));
+        post({ type: "resize", width: w, height: h });
+      });
+      function stop(e) { resizing = false; try { grip.releasePointerCapture(e.pointerId); } catch (_) {} }
+      grip.addEventListener("pointerup", stop);
+      grip.addEventListener("pointercancel", stop);
+    })();
   </script>
 </body>
 </html>
