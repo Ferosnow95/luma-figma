@@ -792,6 +792,7 @@ export async function selectLayers(ids: string[]): Promise<void> {
   if (nodes.length) {
     figma.currentPage.selection = nodes;
     figma.viewport.scrollAndZoomIntoView(nodes);
+    figma.viewport.zoom = figma.viewport.zoom * 0.25; // pull back 75% so there's breathing room
   }
 }
 
