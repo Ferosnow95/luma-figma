@@ -635,6 +635,10 @@
             <h3>Selected layers</h3>
             <p class="hint" id="layerSelHint">Nothing selected.</p>
             <div id="layerList" class="layer-list"></div>
+            <div class="findrep" id="allRow" style="display:none">
+              <input type="text" id="allName" placeholder="Name for all selected" />
+              <button id="applyAllBtn">Apply to all</button>
+            </div>
             <div class="findrep" id="findrepRow" style="display:none">
               <input type="text" id="findText" placeholder="Find" />
               <input type="text" id="replaceText" placeholder="Replace" />
@@ -1003,10 +1007,13 @@
         if (hint) hint.textContent = "Nothing selected.";
         if (apply) apply.disabled = true;
         if (frow) frow.style.display = "none";
+        var arow0 = $("allRow"); if (arow0) arow0.style.display = "none";
         return;
       }
       if (hint) hint.textContent = items.length + " selected" + (info && info.slideName ? " \u00b7 on " + info.slideName : "");
       if (apply) apply.disabled = false;
+      var arow = $("allRow");
+      if (arow) arow.style.display = "flex";
       if (frow) frow.style.display = items.length > 1 ? "flex" : "none";
       items.forEach(function (it, i) {
         var row = document.createElement("div"); row.className = "lrow";
@@ -1039,6 +1046,16 @@
       });
       setStatus("Preview updated \u2014 click Apply names to commit.", "ok");
     }
+    function applyAllName() {
+      var name = $("allName").value.trim();
+      if (!name) { setStatus("Enter a name to apply.", "err"); return; }
+      if (!state.layerSel.length) { setStatus("Nothing selected.", "err"); return; }
+      [].slice.call($("layerList").querySelectorAll("input")).forEach(function (inp) { inp.value = name; });
+      var changes = state.layerSel.map(function (s) { return { id: s.id, name: name }; });
+      post({ type: "rename-layers", options: { list: changes } });
+      setStatus("Renaming " + changes.length + " layer" + (changes.length > 1 ? "s" : "") + " to \u201c" + name + "\u201d\u2026");
+      state.layerSel.forEach(function (s) { s.name = name; });
+    }
     function renderTarget() {
       var slot = $("copyTarget");
       var btn = $("copyTargetBtn");
@@ -1058,6 +1075,8 @@
     }
     $("opacity").oninput = function () { $("opacityVal").textContent = this.value + "%"; };
     $("applyNamesBtn").onclick = function () { applyNames(); };
+    $("applyAllBtn").onclick = function () { applyAllName(); };
+    $("allName").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); applyAllName(); } });
     $("findrepBtn").onclick = function () { applyFindReplace(); };
     $("matchNameBtn").onclick = function () { post({ type: "match-name" }); setStatus("Matching name\u2026"); };
     $("copyPrevBtn").onclick = function () { post({ type: "copy-to-prev" }); setStatus("Copying to previous slide\u2026"); };
