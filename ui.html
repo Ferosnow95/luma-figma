@@ -198,6 +198,15 @@
     .seqitem.branch .nm { color: var(--muted); font-size: 12px; }
     .seqitem.branch .elbow { flex: 0 0 auto; width: 12px; color: #8b6fe0; font-size: 13px; text-align: center; }
     .seqitem.branch .rowbtn { display: inline-flex; }
+    /* layer tools */
+    .layer-sel { font-size: 12px; color: var(--text); line-height: 1.5; max-height: 96px; overflow: auto; }
+    .layer-sel .muted { color: var(--muted); }
+    .layer-sel .slide-of { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
+    .target-slot { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px; border: 1px solid var(--stroke); border-radius: 8px; background: var(--bg); font-size: 12px; color: var(--text); }
+    .target-slot.empty { color: var(--muted); justify-content: center; border-style: dashed; }
+    .target-slot img { width: 56px; height: auto; border-radius: 4px; flex: 0 0 auto; border: 1px solid var(--stroke); }
+    button.ghost { width: 100%; background: transparent; border: 1px solid var(--stroke); color: var(--muted); border-radius: 8px; padding: 8px; cursor: pointer; font: inherit; }
+    button.ghost:hover { color: var(--text); border-color: var(--brand); }
 
     /* bezier studio */
     .studio { display: flex; gap: 14px; align-items: flex-start; }
@@ -613,6 +622,10 @@
         <!-- LAYER TOOLS -->
         <section class="view" id="view-layers">
           <div class="card">
+            <h3>Selection</h3>
+            <div id="layerSel" class="layer-sel">Nothing selected.</div>
+          </div>
+          <div class="card">
             <h3>Match layer name</h3>
             <p class="hint">Select two layers — source first, then target — and copy the first layer's name onto the second.</p>
             <button class="primary" id="matchNameBtn" style="margin-top:4px">Apply name to 2nd layer</button>
@@ -630,9 +643,12 @@
             </div>
           </div>
           <div class="card">
-            <h3>Copy to previous slide</h3>
-            <p class="hint">Clone the selected layer(s) into the slide before their own, keeping the same position.</p>
-            <button class="primary" id="copyPrevBtn" style="margin-top:4px">Copy to previous slide</button>
+            <h3>Copy layer to another slide</h3>
+            <p class="hint">Click the destination slide on the canvas, link it, then copy the selected layer(s) there at the same position.</p>
+            <div id="copyTarget" class="target-slot empty">No target slide linked</div>
+            <button id="linkTargetBtn" style="margin-top:10px">Set target = selected slide</button>
+            <button class="primary" id="copyTargetBtn" style="margin-top:10px" disabled>Copy to target slide</button>
+            <button id="copyPrevBtn" class="ghost" style="margin-top:8px">Or copy to previous slide (by position)</button>
           </div>
         </section>
 
@@ -664,6 +680,7 @@
       loop: false,
       back: false,
       tidydir: "row",
+      copyTarget: null,
       numfmt: "plain",
       numpos: "bottom-right",
       numorder: "position",
@@ -955,9 +972,42 @@
     };
 
     /* ---- layer tools ---- */
+    function renderLayerSel(info) {
+      var box = $("layerSel");
+      if (!box) return;
+      var names = (info && info.names) || [];
+      if (!names.length) { box.innerHTML = '<span class="muted">Nothing selected.</span>'; return; }
+      var head = names.length === 1 ? names[0] : names.length + " layers selected";
+      var html = names.map(function (n) { return n.replace(/[<>&]/g, ""); }).slice(0, 12).join("<br>");
+      box.innerHTML = html;
+      if (info && info.slideName) box.innerHTML += '<span class="slide-of">on slide: ' + info.slideName.replace(/[<>&]/g, "") + "</span>";
+    }
+    function renderTarget() {
+      var slot = $("copyTarget");
+      var btn = $("copyTargetBtn");
+      if (!slot) return;
+      if (!state.copyTarget) {
+        slot.className = "target-slot empty";
+        slot.innerHTML = "No target slide linked";
+        if (btn) btn.disabled = true;
+        return;
+      }
+      slot.className = "target-slot";
+      var t = state.copyTarget;
+      var thumb = state.thumbs[t.id] ? '<img data-thumb="' + t.id + '" src="' + state.thumbs[t.id] + '" />' : '<img data-thumb="' + t.id + '" alt="" />';
+      slot.innerHTML = thumb + "<span>" + t.name.replace(/[<>&]/g, "") + "</span>";
+      if (btn) btn.disabled = false;
+      if (!state.thumbs[t.id]) post({ type: "get-thumbs", options: { ids: [t.id] } });
+    }
     $("opacity").oninput = function () { $("opacityVal").textContent = this.value + "%"; };
     $("matchNameBtn").onclick = function () { post({ type: "match-name" }); setStatus("Matching name\u2026"); };
     $("copyPrevBtn").onclick = function () { post({ type: "copy-to-prev" }); setStatus("Copying to previous slide\u2026"); };
+    $("linkTargetBtn").onclick = function () { post({ type: "set-target" }); setStatus("Linking target slide\u2026"); };
+    $("copyTargetBtn").onclick = function () {
+      if (!state.copyTarget) { setStatus("Link a target slide first.", "err"); return; }
+      post({ type: "copy-to-slide", options: { id: state.copyTarget.id } });
+      setStatus("Copying to \u201c" + state.copyTarget.name + "\u201d\u2026");
+    };
     function applyOpacity(pct) {
       $("opacity").value = pct;
       $("opacityVal").textContent = pct + "%";
@@ -1296,6 +1346,12 @@
         else if (state.selfSelecting) { state.selfSelecting = false; }
         else { syncSeq(info.ids, info.names); }
         if (state.tab === "morph" && count === 2) requestMorph();
+      } else if (msg.type === "layersel") {
+        renderLayerSel(msg.info);
+      } else if (msg.type === "target") {
+        state.copyTarget = msg.slide;
+        renderTarget();
+        setStatus("Target slide: " + msg.slide.name, "ok");
       } else if (msg.type === "done") {
         setStatus(msg.message, "ok");
       } else if (msg.type === "branches") {

@@ -17,6 +17,9 @@ import {
   matchLayerName,
   setSelectionOpacity,
   copyLayerToPrevSlide,
+  copyLayerToSlide,
+  getLayerSelection,
+  getTargetSlide,
   drawMorphGuides,
   clearMorphGuides,
   redrawMorphGuides,
@@ -45,10 +48,12 @@ figma.showUI(__html__, { width: 380, height: 640, themeColors: true, title: "Lum
 
 function pushSelection(): void {
   figma.ui.postMessage({ type: "selection", info: getDeckInfo() });
+  figma.ui.postMessage({ type: "layersel", info: getLayerSelection() });
 }
 
 function pushSelectionForced(): void {
   figma.ui.postMessage({ type: "selection", info: getDeckInfo(), force: true });
+  figma.ui.postMessage({ type: "layersel", info: getLayerSelection() });
 }
 
 figma.on("selectionchange", pushSelection);
@@ -139,6 +144,19 @@ figma.ui.onmessage = async (msg: UIMessage) => {
       }
       case "copy-to-prev": {
         const result = await copyLayerToPrevSlide();
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "set-target": {
+        const slide = getTargetSlide();
+        figma.ui.postMessage({ type: "target", slide });
+        figma.notify(`Target slide: ${slide.name}`);
+        break;
+      }
+      case "copy-to-slide": {
+        const o = msg.options as { id: string };
+        const result = await copyLayerToSlide(o.id);
         figma.notify(result);
         figma.ui.postMessage({ type: "done", message: result });
         break;

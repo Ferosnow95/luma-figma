@@ -878,6 +878,65 @@ export async function copyLayerToPrevSlide(): Promise<string> {
   return `Copied ${copied} layer${copied > 1 ? "s" : ""} to the previous slide.`;
 }
 
+// What the Layer tools tab shows: the names of the selected layers and which
+// slide the first one lives on.
+export function getLayerSelection(): { names: string[]; slideName: string | null } {
+  const sel = figma.currentPage.selection;
+  const names = sel.slice(0, 20).map((n) => n.name);
+  let slideName: string | null = null;
+  if (sel.length) {
+    const deck = orderFrames(collectDeckFramesDeep(), "position");
+    const slide = findContainingSlide(sel[0], new Set(deck.map((f) => f.id)));
+    slideName = slide ? slide.name : null;
+  }
+  return { names, slideName };
+}
+
+// Resolve the slide for the current selection so the UI can lock it as a target.
+export function getTargetSlide(): { id: string; name: string } {
+  const sel = figma.currentPage.selection;
+  if (!sel.length) throw new Error("Select a slide (or a layer on it) to set as the target.");
+  const deck = orderFrames(collectDeckFramesDeep(), "position");
+  const slide = findContainingSlide(sel[0], new Set(deck.map((f) => f.id)));
+  if (!slide) throw new Error("That selection isn't inside a slide.");
+  return { id: slide.id, name: slide.name };
+}
+
+// Clone the selected layer(s) into an explicitly chosen slide, same position.
+export async function copyLayerToSlide(targetId: string): Promise<string> {
+  const sel = figma.currentPage.selection;
+  if (!sel.length) throw new Error("Select a layer to copy.");
+  const target = await figma.getNodeByIdAsync(targetId);
+  if (!target || !("type" in target) || !isDeckFrame(target as SceneNode)) {
+    throw new Error("The linked target slide no longer exists — set it again.");
+  }
+  const dest = target as DeckFrame;
+  const deck = orderFrames(collectDeckFramesDeep(), "position");
+  const slideIds = new Set(deck.map((f) => f.id));
+  const pb = dest.absoluteBoundingBox;
+  let copied = 0;
+  for (const node of sel) {
+    const slide = node.parent ? findContainingSlide(node.parent, slideIds) : null;
+    if (!slide || slide.id === dest.id) continue; // skip layers already on the target
+    const nb = (node as SceneNode).absoluteBoundingBox;
+    const sb = slide.absoluteBoundingBox;
+    const clone = (node as SceneNode).clone();
+    dest.appendChild(clone);
+    if (nb && sb && pb) {
+      const tx = pb.x + (nb.x - sb.x);
+      const ty = pb.y + (nb.y - sb.y);
+      const cb = clone.absoluteBoundingBox;
+      if (cb) {
+        clone.x += tx - cb.x;
+        clone.y += ty - cb.y;
+      }
+    }
+    copied++;
+  }
+  if (!copied) throw new Error("Nothing copied — pick layers that live on a different slide than the target.");
+  return `Copied ${copied} layer${copied > 1 ? "s" : ""} to "${dest.name}".`;
+}
+
 export interface RenameFramesOptions {
   ids: string[]; // frames to rename, in the order numbers should follow
   base: string; // base name; use "{n}" to place the number, else number is appended
