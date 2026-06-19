@@ -915,28 +915,35 @@ export async function copyLayerToSlide(targetId: string): Promise<string> {
   const slideIds = new Set(deck.map((f) => f.id));
   const pb = dest.absoluteBoundingBox;
   let copied = 0;
-  let matched = 0;
+  let nested = 0;
   for (const node of sel) {
     const slide = node.parent ? findContainingSlide(node.parent, slideIds) : null;
     if (!slide || slide.id === dest.id) continue; // skip layers already on the target
     const nb = (node as SceneNode).absoluteBoundingBox;
     const sb = slide.absoluteBoundingBox;
-    // If the target already has a layer with this name, paste into its spot
-    // (replace it) instead of mirroring the source position.
-    const twin = findNamedDescendant(dest, (node as SceneNode).name, node.id);
-    const twinBox = twin ? twin.absoluteBoundingBox : null;
+
+    // Anchor by the element's parent container. If that container (e.g. "Layer a")
+    // also exists on the target slide, paste the element inside it at the same
+    // position relative to the container — so it lands next to the same siblings.
+    const srcParent = node.parent && node.parent.id !== slide.id ? (node.parent as SceneNode) : null;
+    const twin = srcParent ? findNamedContainer(dest, srcParent.name) : null;
     const clone = (node as SceneNode).clone();
-    dest.appendChild(clone);
+
     let tx: number | null = null;
     let ty: number | null = null;
-    if (twin && twinBox) {
-      tx = twinBox.x;
-      ty = twinBox.y;
-      twin.remove(); // replace the matching layer
-      matched++;
-    } else if (nb && sb && pb) {
-      tx = pb.x + (nb.x - sb.x);
-      ty = pb.y + (nb.y - sb.y);
+    if (twin && twin.absoluteBoundingBox && srcParent && srcParent.absoluteBoundingBox && nb) {
+      const tpb = twin.absoluteBoundingBox;
+      const spb = srcParent.absoluteBoundingBox;
+      (twin as FrameNode).appendChild(clone);
+      tx = tpb.x + (nb.x - spb.x);
+      ty = tpb.y + (nb.y - spb.y);
+      nested++;
+    } else {
+      dest.appendChild(clone);
+      if (nb && sb && pb) {
+        tx = pb.x + (nb.x - sb.x);
+        ty = pb.y + (nb.y - sb.y);
+      }
     }
     if (tx !== null && ty !== null) {
       const cb = clone.absoluteBoundingBox;
@@ -948,17 +955,18 @@ export async function copyLayerToSlide(targetId: string): Promise<string> {
     copied++;
   }
   if (!copied) throw new Error("Nothing copied — pick layers that live on a different slide than the target.");
-  const suffix = matched ? ` (replaced ${matched} matching layer${matched > 1 ? "s" : ""})` : "";
+  const suffix = nested ? ` (into ${nested} matching container${nested > 1 ? "s" : ""})` : "";
   return `Copied ${copied} layer${copied > 1 ? "s" : ""} to "${dest.name}"${suffix}.`;
 }
 
-// Find the first descendant of `root` with the given name (skipping `excludeId`).
-function findNamedDescendant(root: SceneNode, name: string, excludeId: string): SceneNode | null {
+// Find the first frame/group/component descendant of `root` with the given name.
+function findNamedContainer(root: SceneNode, name: string): SceneNode | null {
+  const canHold = (t: string) => t === "FRAME" || t === "GROUP" || t === "COMPONENT";
   if (!("children" in root)) return null;
   const stack: SceneNode[] = [...(root.children as readonly SceneNode[])];
   while (stack.length) {
     const n = stack.shift() as SceneNode;
-    if (n.id !== excludeId && n.name === name) return n;
+    if (n.name === name && canHold(n.type)) return n;
     if ("children" in n) stack.push(...(n.children as readonly SceneNode[]));
   }
   return null;
