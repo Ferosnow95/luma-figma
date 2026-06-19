@@ -202,6 +202,16 @@
     .layer-sel { font-size: 12px; color: var(--text); line-height: 1.5; max-height: 96px; overflow: auto; }
     .layer-sel .muted { color: var(--muted); }
     .layer-sel .slide-of { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
+    .layer-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; }
+    .layer-list .lrow { display: flex; align-items: center; gap: 8px; }
+    .layer-list .lrow .lidx { flex: 0 0 auto; min-width: 16px; text-align: right; color: var(--muted); font-size: 11px; }
+    .layer-list .lrow input { flex: 1; min-width: 0; font: inherit; font-size: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--stroke); border-radius: 6px; padding: 5px 7px; }
+    .layer-list .lrow input:focus { border-color: var(--brand); outline: none; }
+    .findrep { display: flex; gap: 6px; margin-top: 10px; }
+    .findrep input { flex: 1; min-width: 0; font: inherit; font-size: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--stroke); border-radius: 6px; padding: 5px 7px; }
+    .findrep input:focus { border-color: var(--brand); outline: none; }
+    .findrep button { flex: 0 0 auto; background: transparent; border: 1px solid var(--stroke); color: var(--muted); border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; }
+    .findrep button:hover { color: var(--text); border-color: var(--brand); }
     .target-slot { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px; border: 1px solid var(--stroke); border-radius: 8px; background: var(--bg); font-size: 12px; color: var(--text); }
     .target-slot.empty { color: var(--muted); justify-content: center; border-style: dashed; }
     .target-slot img { width: 56px; height: auto; border-radius: 4px; flex: 0 0 auto; border: 1px solid var(--stroke); }
@@ -622,8 +632,15 @@
         <!-- LAYER TOOLS -->
         <section class="view" id="view-layers">
           <div class="card">
-            <h3>Selection</h3>
-            <div id="layerSel" class="layer-sel">Nothing selected.</div>
+            <h3>Selected layers</h3>
+            <p class="hint" id="layerSelHint">Nothing selected.</p>
+            <div id="layerList" class="layer-list"></div>
+            <div class="findrep" id="findrepRow" style="display:none">
+              <input type="text" id="findText" placeholder="Find" />
+              <input type="text" id="replaceText" placeholder="Replace" />
+              <button id="findrepBtn">Replace</button>
+            </div>
+            <button class="primary" id="applyNamesBtn" style="margin-top:10px" disabled>Apply names</button>
           </div>
           <div class="card">
             <h3>Match layer name</h3>
@@ -681,6 +698,7 @@
       back: false,
       tidydir: "row",
       copyTarget: null,
+      layerSel: [],
       numfmt: "plain",
       numpos: "bottom-right",
       numorder: "position",
@@ -973,14 +991,53 @@
 
     /* ---- layer tools ---- */
     function renderLayerSel(info) {
-      var box = $("layerSel");
-      if (!box) return;
-      var names = (info && info.names) || [];
-      if (!names.length) { box.innerHTML = '<span class="muted">Nothing selected.</span>'; return; }
-      var head = names.length === 1 ? names[0] : names.length + " layers selected";
-      var html = names.map(function (n) { return n.replace(/[<>&]/g, ""); }).slice(0, 12).join("<br>");
-      box.innerHTML = html;
-      if (info && info.slideName) box.innerHTML += '<span class="slide-of">on slide: ' + info.slideName.replace(/[<>&]/g, "") + "</span>";
+      var list = $("layerList");
+      if (!list) return;
+      var items = (info && info.items) || [];
+      state.layerSel = items.map(function (it) { return { id: it.id, name: it.name }; });
+      var hint = $("layerSelHint");
+      var apply = $("applyNamesBtn");
+      var frow = $("findrepRow");
+      list.innerHTML = "";
+      if (!items.length) {
+        if (hint) hint.textContent = "Nothing selected.";
+        if (apply) apply.disabled = true;
+        if (frow) frow.style.display = "none";
+        return;
+      }
+      if (hint) hint.textContent = items.length + " selected" + (info && info.slideName ? " \u00b7 on " + info.slideName : "");
+      if (apply) apply.disabled = false;
+      if (frow) frow.style.display = items.length > 1 ? "flex" : "none";
+      items.forEach(function (it, i) {
+        var row = document.createElement("div"); row.className = "lrow";
+        var idx = document.createElement("span"); idx.className = "lidx"; idx.textContent = i + 1;
+        var input = document.createElement("input"); input.type = "text"; input.value = it.name; input.dataset.id = it.id;
+        input.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); applyNames(); } });
+        row.appendChild(idx); row.appendChild(input);
+        list.appendChild(row);
+      });
+    }
+    function applyNames() {
+      var inputs = [].slice.call($("layerList").querySelectorAll("input"));
+      var changes = [];
+      inputs.forEach(function (inp) {
+        var name = inp.value.trim();
+        var orig = (state.layerSel.find(function (s) { return s.id === inp.dataset.id; }) || {}).name;
+        if (name && name !== orig) changes.push({ id: inp.dataset.id, name: name });
+      });
+      if (!changes.length) { setStatus("No name changes to apply.", "err"); return; }
+      post({ type: "rename-layers", options: { list: changes } });
+      setStatus("Renaming " + changes.length + " layer" + (changes.length > 1 ? "s" : "") + "\u2026");
+      changes.forEach(function (c) { var s = state.layerSel.find(function (x) { return x.id === c.id; }); if (s) s.name = c.name; });
+    }
+    function applyFindReplace() {
+      var find = $("findText").value;
+      if (!find) { setStatus("Enter text to find.", "err"); return; }
+      var repl = $("replaceText").value;
+      [].slice.call($("layerList").querySelectorAll("input")).forEach(function (inp) {
+        inp.value = inp.value.split(find).join(repl);
+      });
+      setStatus("Preview updated \u2014 click Apply names to commit.", "ok");
     }
     function renderTarget() {
       var slot = $("copyTarget");
@@ -1000,6 +1057,8 @@
       if (!state.thumbs[t.id]) post({ type: "get-thumbs", options: { ids: [t.id] } });
     }
     $("opacity").oninput = function () { $("opacityVal").textContent = this.value + "%"; };
+    $("applyNamesBtn").onclick = function () { applyNames(); };
+    $("findrepBtn").onclick = function () { applyFindReplace(); };
     $("matchNameBtn").onclick = function () { post({ type: "match-name" }); setStatus("Matching name\u2026"); };
     $("copyPrevBtn").onclick = function () { post({ type: "copy-to-prev" }); setStatus("Copying to previous slide\u2026"); };
     $("linkTargetBtn").onclick = function () { post({ type: "set-target" }); setStatus("Linking target slide\u2026"); };

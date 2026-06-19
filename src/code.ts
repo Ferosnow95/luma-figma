@@ -14,6 +14,7 @@ import {
   analyzeMorph,
   selectLayers,
   renameLayer,
+  renameLayers,
   matchLayerName,
   setSelectionOpacity,
   copyLayerToPrevSlide,
@@ -243,6 +244,13 @@ figma.ui.onmessage = async (msg: UIMessage) => {
       case "rename-layer": {
         const o = msg.options as { id: string; name: string };
         const result = await renameLayer(o.id, o.name);
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "rename-layers": {
+        const o = msg.options as { list: { id: string; name: string }[] };
+        const result = await renameLayers(o.list || []);
         figma.notify(result);
         figma.ui.postMessage({ type: "done", message: result });
         break;

@@ -803,6 +803,22 @@ export async function renameLayer(id: string, name: string): Promise<string> {
   return `Renamed layer to "${name}".`;
 }
 
+// Rename many layers at once (Layer tools batch editor).
+export async function renameLayers(list: { id: string; name: string }[]): Promise<string> {
+  let n = 0;
+  for (const it of list) {
+    const name = (it.name || "").trim();
+    if (!name) continue;
+    const node = await figma.getNodeByIdAsync(it.id);
+    if (node && "name" in node && (node as SceneNode).name !== name) {
+      (node as SceneNode).name = name;
+      n++;
+    }
+  }
+  if (!n) throw new Error("No names changed.");
+  return `Renamed ${n} layer${n > 1 ? "s" : ""}.`;
+}
+
 // ---------------------------------------------------------------------------
 // Layer tools — small per-layer utilities that act on the current selection
 // ---------------------------------------------------------------------------
@@ -880,16 +896,16 @@ export async function copyLayerToPrevSlide(): Promise<string> {
 
 // What the Layer tools tab shows: the names of the selected layers and which
 // slide the first one lives on.
-export function getLayerSelection(): { names: string[]; slideName: string | null } {
+export function getLayerSelection(): { items: { id: string; name: string }[]; slideName: string | null } {
   const sel = figma.currentPage.selection;
-  const names = sel.slice(0, 20).map((n) => n.name);
+  const items = sel.slice(0, 60).map((n) => ({ id: n.id, name: n.name }));
   let slideName: string | null = null;
   if (sel.length) {
     const deck = orderFrames(collectDeckFramesDeep(), "position");
     const slide = findContainingSlide(sel[0], new Set(deck.map((f) => f.id)));
     slideName = slide ? slide.name : null;
   }
-  return { names, slideName };
+  return { items, slideName };
 }
 
 // Resolve the slide for the current selection so the UI can lock it as a target.
