@@ -915,16 +915,30 @@ export async function copyLayerToSlide(targetId: string): Promise<string> {
   const slideIds = new Set(deck.map((f) => f.id));
   const pb = dest.absoluteBoundingBox;
   let copied = 0;
+  let matched = 0;
   for (const node of sel) {
     const slide = node.parent ? findContainingSlide(node.parent, slideIds) : null;
     if (!slide || slide.id === dest.id) continue; // skip layers already on the target
     const nb = (node as SceneNode).absoluteBoundingBox;
     const sb = slide.absoluteBoundingBox;
+    // If the target already has a layer with this name, paste into its spot
+    // (replace it) instead of mirroring the source position.
+    const twin = findNamedDescendant(dest, (node as SceneNode).name, node.id);
+    const twinBox = twin ? twin.absoluteBoundingBox : null;
     const clone = (node as SceneNode).clone();
     dest.appendChild(clone);
-    if (nb && sb && pb) {
-      const tx = pb.x + (nb.x - sb.x);
-      const ty = pb.y + (nb.y - sb.y);
+    let tx: number | null = null;
+    let ty: number | null = null;
+    if (twin && twinBox) {
+      tx = twinBox.x;
+      ty = twinBox.y;
+      twin.remove(); // replace the matching layer
+      matched++;
+    } else if (nb && sb && pb) {
+      tx = pb.x + (nb.x - sb.x);
+      ty = pb.y + (nb.y - sb.y);
+    }
+    if (tx !== null && ty !== null) {
       const cb = clone.absoluteBoundingBox;
       if (cb) {
         clone.x += tx - cb.x;
@@ -934,7 +948,20 @@ export async function copyLayerToSlide(targetId: string): Promise<string> {
     copied++;
   }
   if (!copied) throw new Error("Nothing copied — pick layers that live on a different slide than the target.");
-  return `Copied ${copied} layer${copied > 1 ? "s" : ""} to "${dest.name}".`;
+  const suffix = matched ? ` (replaced ${matched} matching layer${matched > 1 ? "s" : ""})` : "";
+  return `Copied ${copied} layer${copied > 1 ? "s" : ""} to "${dest.name}"${suffix}.`;
+}
+
+// Find the first descendant of `root` with the given name (skipping `excludeId`).
+function findNamedDescendant(root: SceneNode, name: string, excludeId: string): SceneNode | null {
+  if (!("children" in root)) return null;
+  const stack: SceneNode[] = [...(root.children as readonly SceneNode[])];
+  while (stack.length) {
+    const n = stack.shift() as SceneNode;
+    if (n.id !== excludeId && n.name === name) return n;
+    if ("children" in n) stack.push(...(n.children as readonly SceneNode[]));
+  }
+  return null;
 }
 
 export interface RenameFramesOptions {
