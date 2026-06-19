@@ -14,6 +14,9 @@ import {
   analyzeMorph,
   selectLayers,
   renameLayer,
+  matchLayerName,
+  setSelectionOpacity,
+  copyLayerToPrevSlide,
   drawMorphGuides,
   clearMorphGuides,
   redrawMorphGuides,
@@ -117,6 +120,25 @@ figma.ui.onmessage = async (msg: UIMessage) => {
       }
       case "tidy": {
         const result = await tidyDeck(msg.options as TidyOptions);
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "match-name": {
+        const result = await matchLayerName();
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "set-opacity": {
+        const o = msg.options as { value: number };
+        const result = await setSelectionOpacity(o.value);
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "copy-to-prev": {
+        const result = await copyLayerToPrevSlide();
         figma.notify(result);
         figma.ui.postMessage({ type: "done", message: result });
         break;

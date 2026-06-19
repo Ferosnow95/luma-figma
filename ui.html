@@ -301,6 +301,9 @@
       <button data-tab="organize" title="Organize connected screens">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="9" height="8" rx="1.5"/><rect x="16" y="4" width="5" height="5" rx="1.2"/><rect x="16" y="15" width="5" height="5" rx="1.2"/><path d="M12 10h4M12 14h4"/></svg>
       </button>
+      <button data-tab="layers" title="Layer tools">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>
+      </button>
       <button data-tab="inspect" title="Flow Inspector">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
       </button>
@@ -607,6 +610,32 @@
           <button class="primary" id="organizeBtn">Organize connected screens</button>
         </section>
 
+        <!-- LAYER TOOLS -->
+        <section class="view" id="view-layers">
+          <div class="card">
+            <h3>Match layer name</h3>
+            <p class="hint">Select two layers — source first, then target — and copy the first layer's name onto the second.</p>
+            <button class="primary" id="matchNameBtn" style="margin-top:4px">Apply name to 2nd layer</button>
+          </div>
+          <div class="card">
+            <h3>Opacity</h3>
+            <p class="hint">Set the opacity of every selected layer.</p>
+            <div class="range">
+              <input type="range" id="opacity" min="0" max="100" step="1" value="100" />
+              <span class="val" id="opacityVal">100%</span>
+            </div>
+            <div class="chips" style="margin-top:10px">
+              <button id="opacity0">0%</button>
+              <button id="opacity100">100%</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Copy to previous slide</h3>
+            <p class="hint">Clone the selected layer(s) into the slide before their own, keeping the same position.</p>
+            <button class="primary" id="copyPrevBtn" style="margin-top:4px">Copy to previous slide</button>
+          </div>
+        </section>
+
         <!-- MORE -->
         <section class="view" id="view-more">
           <div class="card soon">
@@ -676,6 +705,7 @@
       layout: ["Layout", "Size & arrange your deck"],
       organize: ["Organize Screens", "Tidy connected screen groups"],
       inspect: ["Flow Inspector", "Audit & repair connections"],
+      layers: ["Layer tools", "Per-layer quick actions"],
       more: ["More tools", "Coming soon"],
     };
 
@@ -923,6 +953,20 @@
       post({ type: "tidy", options: { gap: +$("gap").value, direction: state.tidydir } });
       setStatus("Tidying…");
     };
+
+    /* ---- layer tools ---- */
+    $("opacity").oninput = function () { $("opacityVal").textContent = this.value + "%"; };
+    $("matchNameBtn").onclick = function () { post({ type: "match-name" }); setStatus("Matching name\u2026"); };
+    $("copyPrevBtn").onclick = function () { post({ type: "copy-to-prev" }); setStatus("Copying to previous slide\u2026"); };
+    function applyOpacity(pct) {
+      $("opacity").value = pct;
+      $("opacityVal").textContent = pct + "%";
+      post({ type: "set-opacity", options: { value: pct / 100 } });
+      setStatus("Setting opacity\u2026");
+    }
+    $("opacity").onchange = function () { applyOpacity(+this.value); };
+    $("opacity0").onclick = function () { applyOpacity(0); };
+    $("opacity100").onclick = function () { applyOpacity(100); };
 
     /* ---- morph inspector ---- */
     var morphReport = null;

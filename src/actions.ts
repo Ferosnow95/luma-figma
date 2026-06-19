@@ -803,6 +803,81 @@ export async function renameLayer(id: string, name: string): Promise<string> {
   return `Renamed layer to "${name}".`;
 }
 
+// ---------------------------------------------------------------------------
+// Layer tools — small per-layer utilities that act on the current selection
+// ---------------------------------------------------------------------------
+
+// Copy the name of the first selected layer onto the second.
+export async function matchLayerName(): Promise<string> {
+  const sel = figma.currentPage.selection;
+  if (sel.length !== 2) throw new Error("Select exactly 2 layers (source first, then target).");
+  const source = sel[0];
+  const target = sel[1];
+  target.name = source.name;
+  return `Applied "${source.name}" to the 2nd layer.`;
+}
+
+// Set opacity (0..1) on every selected layer that supports it.
+export async function setSelectionOpacity(value: number): Promise<string> {
+  const sel = figma.currentPage.selection;
+  if (!sel.length) throw new Error("Select layers to change opacity.");
+  const v = Math.max(0, Math.min(1, value));
+  let count = 0;
+  for (const node of sel) {
+    if ("opacity" in node) {
+      (node as SceneNode & { opacity: number }).opacity = v;
+      count++;
+    }
+  }
+  if (!count) throw new Error("None of the selected layers support opacity.");
+  return `Set opacity to ${Math.round(v * 100)}% on ${count} layer${count > 1 ? "s" : ""}.`;
+}
+
+// Find the deck slide that contains a given node (the node itself or an ancestor).
+function findContainingSlide(node: BaseNode, slideIds: Set<string>): DeckFrame | null {
+  let cur: BaseNode | null = node;
+  while (cur) {
+    if (slideIds.has(cur.id)) return cur as DeckFrame;
+    cur = cur.parent;
+  }
+  return null;
+}
+
+// Clone each selected layer into the slide that comes before its own slide,
+// keeping the same on-screen position.
+export async function copyLayerToPrevSlide(): Promise<string> {
+  const sel = figma.currentPage.selection;
+  if (!sel.length) throw new Error("Select a layer to copy back a slide.");
+  const deck = orderFrames(collectDeckFramesDeep(), "position");
+  const slideIds = new Set(deck.map((f) => f.id));
+  let copied = 0;
+  for (const node of sel) {
+    // Start from the node's parent so selecting a whole slide is ignored.
+    const slide = node.parent ? findContainingSlide(node.parent, slideIds) : null;
+    if (!slide) continue;
+    const i = deck.findIndex((f) => f.id === slide.id);
+    if (i <= 0) continue; // no previous slide
+    const prev = deck[i - 1];
+    const nb = (node as SceneNode).absoluteBoundingBox;
+    const sb = slide.absoluteBoundingBox;
+    const pb = prev.absoluteBoundingBox;
+    const clone = (node as SceneNode).clone();
+    prev.appendChild(clone);
+    if (nb && sb && pb) {
+      const targetX = pb.x + (nb.x - sb.x);
+      const targetY = pb.y + (nb.y - sb.y);
+      const cb = clone.absoluteBoundingBox;
+      if (cb) {
+        clone.x += targetX - cb.x;
+        clone.y += targetY - cb.y;
+      }
+    }
+    copied++;
+  }
+  if (!copied) throw new Error("Nothing to copy — the layer's slide has no slide before it.");
+  return `Copied ${copied} layer${copied > 1 ? "s" : ""} to the previous slide.`;
+}
+
 export interface RenameFramesOptions {
   ids: string[]; // frames to rename, in the order numbers should follow
   base: string; // base name; use "{n}" to place the number, else number is appended
