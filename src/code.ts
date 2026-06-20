@@ -45,7 +45,7 @@ import {
   OrganizeOptions,
 } from "./actions";
 
-figma.showUI(__html__, { width: 380, height: 640, themeColors: true, title: "Luma" });
+figma.showUI(__html__, { width: 480, height: 640, themeColors: true, title: "Luma" });
 
 function pushSelection(): void {
   figma.ui.postMessage({ type: "selection", info: getDeckInfo() });

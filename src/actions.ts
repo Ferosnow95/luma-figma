@@ -137,19 +137,86 @@ function naturalCompare(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
-// Reading order: group into rows by Y, then left-to-right within a row.
-function orderFrames(frames: DeckFrame[], order: Order): DeckFrame[] {
-  const arr = frames.slice();
-  if (order === "name") {
-    arr.sort((a, b) => naturalCompare(a.name, b.name));
-    return arr;
+// The section a frame lives in (walking up), or null if it sits on the page.
+function containingSection(f: DeckFrame): SectionNode | null {
+  let p: BaseNode | null = f.parent;
+  while (p) {
+    if (p.type === "SECTION") return p as SectionNode;
+    p = p.parent;
   }
-  arr.sort((a, b) => {
-    const rowGap = Math.min(a.height, b.height) * 0.5;
-    if (Math.abs(a.y - b.y) > rowGap) return a.y - b.y;
-    return a.x - b.x;
+  return null;
+}
+
+// Absolute top-left of a node. CRITICAL for cross-section ordering: a frame's
+// own x/y are RELATIVE to its parent section, so comparing x/y across different
+// sections is meaningless. absoluteBoundingBox puts every frame in one space.
+function absPos(n: SceneNode): { x: number; y: number } {
+  const b = n.absoluteBoundingBox;
+  return b ? { x: b.x, y: b.y } : { x: n.x, y: n.y };
+}
+
+// Reading-order compare (top-to-bottom rows, left-to-right within a row) using
+// absolute coordinates.
+function readingOrderCompare(a: SceneNode, b: SceneNode): number {
+  const pa = absPos(a);
+  const pb = absPos(b);
+  const rowGap = Math.min(a.height, b.height) * 0.5;
+  if (Math.abs(pa.y - pb.y) > rowGap) return pa.y - pb.y;
+  return pa.x - pb.x;
+}
+
+// Reading order, but SECTION-AWARE: frames are grouped by their containing
+// section, the sections are ordered among themselves by absolute reading order,
+// and within each section frames keep their own order. This makes connecting
+// across several sections behave like "finish section A in its order, then
+// section B" instead of interleaving frames from different sections (which the
+// old global x/y sort did, because section-child coords are section-relative).
+function orderFrames(frames: DeckFrame[], order: Order): DeckFrame[] {
+  // Bucket by section (page-level frames share one "no section" bucket).
+  const buckets = new Map<string, { sec: SectionNode | null; items: DeckFrame[] }>();
+  for (const f of frames) {
+    const sec = containingSection(f);
+    const key = sec ? sec.id : "__page__";
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { sec, items: [] };
+      buckets.set(key, bucket);
+    }
+    bucket.items.push(f);
+  }
+
+  // Representative absolute position for ordering the buckets themselves.
+  const bucketPos = (b: { sec: SectionNode | null; items: DeckFrame[] }): { x: number; y: number } => {
+    if (b.sec && b.sec.absoluteBoundingBox) {
+      return { x: b.sec.absoluteBoundingBox.x, y: b.sec.absoluteBoundingBox.y };
+    }
+    let mx = Infinity;
+    let my = Infinity;
+    for (const it of b.items) {
+      const p = absPos(it);
+      if (p.y < my || (p.y === my && p.x < mx)) {
+        mx = p.x;
+        my = p.y;
+      }
+    }
+    return { x: mx, y: my };
+  };
+
+  const orderedBuckets = [...buckets.values()].sort((a, b) => {
+    const pa = bucketPos(a);
+    const pb = bucketPos(b);
+    if (Math.abs(pa.y - pb.y) > 1) return pa.y - pb.y;
+    return pa.x - pb.x;
   });
-  return arr;
+
+  const out: DeckFrame[] = [];
+  for (const b of orderedBuckets) {
+    const items = b.items.slice();
+    if (order === "name") items.sort((x, y) => naturalCompare(x.name, y.name));
+    else items.sort(readingOrderCompare);
+    out.push(...items);
+  }
+  return out;
 }
 
 // Honor a manual drag-to-reorder list when the UI supplies one; otherwise fall

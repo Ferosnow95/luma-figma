@@ -199,6 +199,9 @@
     .seqitem.branch .elbow { flex: 0 0 auto; width: 12px; color: #8b6fe0; font-size: 13px; text-align: center; }
     .seqitem.branch .rowbtn { display: inline-flex; }
     /* layer tools */
+    .val.editable { cursor: text; border-bottom: 1px dashed var(--stroke); }
+    .val.editable:hover { color: var(--text); border-bottom-color: var(--brand); }
+    .val-edit { width: 58px; font: inherit; font-size: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--brand); border-radius: 4px; padding: 1px 4px; }
     .layer-sel { font-size: 12px; color: var(--text); line-height: 1.5; max-height: 96px; overflow: auto; }
     .layer-sel .muted { color: var(--muted); }
     .layer-sel .slide-of { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
@@ -397,8 +400,8 @@
 
             <label class="row">Duration</label>
             <div class="range">
-              <input type="range" id="duration" min="0" max="2000" step="10" value="300" />
-              <span class="val" id="durationVal">300 ms</span>
+              <input type="range" id="duration" min="0" max="2000" step="10" value="800" />
+              <span class="val editable" id="durationVal" title="Click to type an exact value">800 ms</span>
             </div>
           </div>
 
@@ -695,7 +698,7 @@
       direction: "LEFT",
       easing: "EASE_IN_AND_OUT",
       bezier: { x1: 0.42, y1: 0, x2: 0.58, y2: 1 },
-      duration: 300,
+      duration: 800,
       trigger: "ON_CLICK",
       autoDelay: 3,
       loop: false,
@@ -814,7 +817,35 @@
     });
 
     /* ---- ranges ---- */
-    $("duration").oninput = function () { state.duration = +this.value; $("durationVal").textContent = this.value + " ms"; };
+    function setDuration(ms) {
+      ms = Math.max(0, Math.min(2000, Math.round(ms)));
+      state.duration = ms;
+      $("duration").value = ms;
+      $("durationVal").textContent = ms + " ms";
+    }
+    $("duration").oninput = function () { setDuration(+this.value); };
+    // Click the value to type an exact duration; slider stays in sync.
+    $("durationVal").onclick = function () {
+      var span = this;
+      if (span.querySelector("input")) return;
+      var input = document.createElement("input");
+      input.type = "number"; input.min = 0; input.max = 2000; input.step = 10;
+      input.value = state.duration; input.className = "val-edit";
+      span.textContent = ""; span.appendChild(input);
+      input.focus(); input.select();
+      var done = false;
+      function finish(commit) {
+        if (done) return; done = true;
+        if (commit && input.value !== "") setDuration(+input.value);
+        else $("durationVal").textContent = state.duration + " ms";
+      }
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); finish(true); }
+        else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+      });
+      input.addEventListener("blur", function () { finish(true); });
+      input.addEventListener("click", function (e) { e.stopPropagation(); });
+    };
     $("autoDelay").oninput = function () { state.autoDelay = +this.value; $("autoDelayVal").textContent = (+this.value).toFixed(1) + " s"; };
     $("gap").oninput = function () { $("gapVal").textContent = this.value + " px"; };
 
