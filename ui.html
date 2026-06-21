@@ -667,6 +667,18 @@
             </div>
           </div>
           <div class="card">
+            <h3>Lock &amp; outline</h3>
+            <p class="hint">Lock the selected layers so they can’t be moved, or draw a dashed outline around them to spot them on a busy canvas.</p>
+            <div class="chips" style="margin-top:4px">
+              <button id="lockBtn">Lock</button>
+              <button id="unlockBtn">Unlock</button>
+            </div>
+            <div class="chips" style="margin-top:10px">
+              <button id="outlineBtn">Outline selection</button>
+              <button id="clearOutlineBtn" class="ghost">Clear outlines</button>
+            </div>
+          </div>
+          <div class="card">
             <h3>Copy layer to another slide</h3>
             <p class="hint">Click the destination slide on the canvas, link it, then copy the selected layer(s) there at the same position.</p>
             <div id="copyTarget" class="target-slot empty">No target slide linked</div>
@@ -1126,6 +1138,10 @@
     $("opacity").onchange = function () { applyOpacity(+this.value); };
     $("opacity0").onclick = function () { applyOpacity(0); };
     $("opacity100").onclick = function () { applyOpacity(100); };
+    $("lockBtn").onclick = function () { post({ type: "lock-layers", options: { locked: true } }); setStatus("Locking\u2026"); };
+    $("unlockBtn").onclick = function () { post({ type: "lock-layers", options: { locked: false } }); setStatus("Unlocking\u2026"); };
+    $("outlineBtn").onclick = function () { post({ type: "outline-selection" }); setStatus("Outlining selection\u2026"); };
+    $("clearOutlineBtn").onclick = function () { post({ type: "clear-outlines" }); setStatus("Clearing outlines\u2026"); };
 
     /* ---- morph inspector ---- */
     var morphReport = null;

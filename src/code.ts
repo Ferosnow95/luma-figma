@@ -17,6 +17,9 @@ import {
   renameLayers,
   matchLayerName,
   setSelectionOpacity,
+  setSelectionLocked,
+  outlineSelection,
+  clearOutlines,
   copyLayerToPrevSlide,
   copyLayerToSlide,
   getLayerSelection,
@@ -139,6 +142,25 @@ figma.ui.onmessage = async (msg: UIMessage) => {
       case "set-opacity": {
         const o = msg.options as { value: number };
         const result = await setSelectionOpacity(o.value);
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "lock-layers": {
+        const o = msg.options as { locked: boolean };
+        const result = setSelectionLocked(o.locked);
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "outline-selection": {
+        const result = outlineSelection();
+        figma.notify(result);
+        figma.ui.postMessage({ type: "done", message: result });
+        break;
+      }
+      case "clear-outlines": {
+        const result = clearOutlines();
         figma.notify(result);
         figma.ui.postMessage({ type: "done", message: result });
         break;

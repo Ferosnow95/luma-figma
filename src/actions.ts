@@ -916,6 +916,75 @@ export async function setSelectionOpacity(value: number): Promise<string> {
   return `Set opacity to ${Math.round(v * 100)}% on ${count} layer${count > 1 ? "s" : ""}.`;
 }
 
+// Lock or unlock every selected layer so it can't be moved/edited on the canvas.
+export function setSelectionLocked(locked: boolean): string {
+  const sel = figma.currentPage.selection;
+  if (!sel.length) throw new Error(`Select layers to ${locked ? "lock" : "unlock"}.`);
+  let count = 0;
+  for (const node of sel) {
+    if ("locked" in node) {
+      (node as SceneNode & { locked: boolean }).locked = locked;
+      count++;
+    }
+  }
+  if (!count) throw new Error(`None of the selected layers can be ${locked ? "locked" : "unlocked"}.`);
+  return `${locked ? "Locked" : "Unlocked"} ${count} layer${count > 1 ? "s" : ""}.`;
+}
+
+// ---------------------------------------------------------------------------
+// Outline selection — non-destructive dashed outlines around selected layers
+// ---------------------------------------------------------------------------
+
+const OUTLINE_MARK = "luma-outline";
+const OUTLINE_COLOR: RGB = { r: 0.55, g: 0.36, b: 0.96 };
+
+function removeOutlineNodes(): number {
+  let removed = 0;
+  for (const c of figma.currentPage.children) {
+    if (c.getPluginData(OUTLINE_MARK) === "1") {
+      c.remove();
+      removed++;
+    }
+  }
+  return removed;
+}
+
+// Draw a dashed outline rectangle around each selected layer's bounds so it's
+// easy to spot on a busy canvas. The outlines are a locked overlay group tagged
+// with plugin data, and never touch the user's own layers.
+export function outlineSelection(): string {
+  const sel = figma.currentPage.selection;
+  if (!sel.length) throw new Error("Select layers to outline.");
+  removeOutlineNodes();
+  const created: SceneNode[] = [];
+  for (const node of sel) {
+    const bb = node.absoluteBoundingBox;
+    if (!bb) continue;
+    const r = figma.createRectangle();
+    r.x = bb.x;
+    r.y = bb.y;
+    r.resize(Math.max(bb.width, 0.01), Math.max(bb.height, 0.01));
+    r.fills = [];
+    r.strokes = [{ type: "SOLID", color: OUTLINE_COLOR }];
+    r.strokeWeight = 2;
+    r.strokeAlign = "OUTSIDE";
+    r.dashPattern = [6, 4];
+    created.push(r);
+  }
+  if (!created.length) throw new Error("Couldn't outline the selection.");
+  const target: SceneNode = created.length > 1 ? figma.group(created, figma.currentPage) : created[0];
+  target.name = "Luma Outlines";
+  target.setPluginData(OUTLINE_MARK, "1");
+  if ("locked" in target) (target as SceneNode & { locked: boolean }).locked = true;
+  figma.currentPage.selection = sel; // keep the user's own layers selected
+  return `Outlined ${created.length} layer${created.length > 1 ? "s" : ""}.`;
+}
+
+export function clearOutlines(): string {
+  const removed = removeOutlineNodes();
+  return removed ? "Cleared outlines." : "No outlines to clear.";
+}
+
 // Find the deck slide that contains a given node (the node itself or an ancestor).
 function findContainingSlide(node: BaseNode, slideIds: Set<string>): DeckFrame | null {
   let cur: BaseNode | null = node;
