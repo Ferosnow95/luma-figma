@@ -877,6 +877,18 @@
     };
 
     /* ---- easing chips ---- */
+    function persistEasing() { post({ type: "save-easing", options: { easing: state.easing, bezier: state.bezier } }); }
+    // Restore the easing remembered from a previous run.
+    function applyEasingPref(easing, bezier) {
+      if (!easing) return;
+      state.easing = easing;
+      $("easingChips").querySelectorAll("button").forEach(function (x) { x.classList.toggle("active", x.getAttribute("data-v") === easing); });
+      if (easing === "CUSTOM") {
+        if (bezier && typeof bezier.x1 === "number") loadBezier([bezier.x1, bezier.y1, bezier.x2, bezier.y2]);
+      } else if (PRESET_BEZIER[easing]) {
+        loadBezier(PRESET_BEZIER[easing]);
+      }
+    }
     $("easingChips").querySelectorAll("button").forEach(function (b) {
       b.onclick = function () {
         $("easingChips").querySelectorAll("button").forEach(function (x) { x.classList.remove("active"); });
@@ -884,6 +896,7 @@
         state.easing = b.getAttribute("data-v");
         if (state.easing === "CUSTOM") { $("[data-tab=motion]"); document.querySelector('.rail button[data-tab="motion"]').click(); }
         else if (PRESET_BEZIER[state.easing]) loadBezier(PRESET_BEZIER[state.easing]);
+        persistEasing();
       };
     });
 
@@ -971,7 +984,7 @@
           $("easingChips").querySelectorAll("button").forEach(function (x) { x.classList.toggle("active", x.getAttribute("data-v") === "CUSTOM"); });
           renderCurve();
         }
-        function up(ev) { handle.releasePointerCapture(e.pointerId); curve.removeEventListener("pointermove", move); curve.removeEventListener("pointerup", up); }
+        function up(ev) { handle.releasePointerCapture(e.pointerId); curve.removeEventListener("pointermove", move); curve.removeEventListener("pointerup", up); persistEasing(); }
         curve.addEventListener("pointermove", move);
         curve.addEventListener("pointerup", up);
       });
@@ -993,6 +1006,7 @@
       state.easing = "CUSTOM";
       document.querySelector('.rail button[data-tab="flow"]').click();
       $("easingChips").querySelectorAll("button").forEach(function (x) { x.classList.toggle("active", x.getAttribute("data-v") === "CUSTOM"); });
+      persistEasing();
       setStatus("Custom curve set as Slide Flow easing.", "ok");
     };
     renderCurve();
@@ -1563,6 +1577,8 @@
         if (msg.message) setStatus(msg.message, "ok");
       } else if (msg.type === "pages") {
         updateNav(msg);
+      } else if (msg.type === "prefs") {
+        applyEasingPref(msg.easing, msg.bezier);
       } else if (msg.type === "error") {
         setStatus(msg.message, "err");
       }

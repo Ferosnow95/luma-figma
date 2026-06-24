@@ -107,6 +107,18 @@ recordPage();
 pushSelection();
 pushNav();
 
+// ---------- remembered easing ----------
+// Persist the last easing chosen for Slide Flow so it survives across runs.
+const EASING_KEY = "luma:lastEasing";
+figma.clientStorage
+  .getAsync(EASING_KEY)
+  .then((saved) => {
+    if (saved) figma.ui.postMessage({ type: "prefs", easing: (saved as { easing?: string }).easing, bezier: (saved as { bezier?: unknown }).bezier });
+  })
+  .catch(() => {
+    /* no saved easing yet */
+  });
+
 // --- Live morph guides: redraw the on-canvas motion paths as the design changes ---
 let guidesLive = false;
 let redrawScheduled = false;
@@ -434,6 +446,11 @@ figma.ui.onmessage = async (msg: UIMessage) => {
       }
       case "nav-forward": {
         await navTo(histIndex + 1);
+        break;
+      }
+      case "save-easing": {
+        const o = msg.options as { easing: string; bezier: unknown };
+        await figma.clientStorage.setAsync(EASING_KEY, { easing: o.easing, bezier: o.bezier });
         break;
       }
       case "close": {
