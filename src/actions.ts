@@ -1177,6 +1177,112 @@ export async function exportThumbnails(ids: string[]): Promise<Thumb[]> {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Export for web — render every top-level slide to PNG and pack them into a
+// single ZIP whose entries are named by node id (e.g. "1-114362.png"), matching
+// the web player's deck.json. Lets the whole deck become a browser slideshow in
+// one click. Uses a tiny store-only ZIP encoder so there's no dependency.
+// ---------------------------------------------------------------------------
+
+export interface WebExport {
+  data: Uint8Array; // a .zip of PNGs
+  count: number;
+  bytes: number;
+}
+
+export async function exportDeckForWeb(scale = 1): Promise<WebExport> {
+  const frames = orderFrames(collectDeckFramesDeep(), "position");
+  if (!frames.length) {
+    throw new Error("No slides found to export. Select the deck (or a section) and try again.");
+  }
+  const files: { name: string; data: Uint8Array }[] = [];
+  for (const f of frames) {
+    if (!("exportAsync" in f)) continue;
+    try {
+      const bytes = await (f as SceneNode).exportAsync({ format: "PNG", constraint: { type: "SCALE", value: scale } });
+      files.push({ name: f.id.replace(/:/g, "-") + ".png", data: bytes });
+    } catch (e) {
+      /* a node that refuses to export \u2014 skip it rather than fail the batch */
+    }
+  }
+  if (!files.length) throw new Error("Nothing could be exported.");
+  const zip = zipStore(files);
+  return { data: zip, count: files.length, bytes: zip.length };
+}
+
+// --- minimal store-only ZIP writer (method 0, no compression) --------------
+let CRC_TABLE: Uint32Array | null = null;
+function crcTable(): Uint32Array {
+  if (CRC_TABLE) return CRC_TABLE;
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  CRC_TABLE = t;
+  return t;
+}
+function crc32(buf: Uint8Array): number {
+  const t = crcTable();
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = t[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function asciiBytes(s: string): Uint8Array {
+  const a = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i) & 0xff;
+  return a;
+}
+function u16(v: number): Uint8Array {
+  return new Uint8Array([v & 0xff, (v >>> 8) & 0xff]);
+}
+function u32(v: number): Uint8Array {
+  return new Uint8Array([v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff]);
+}
+function concatBytes(arrs: Uint8Array[]): Uint8Array {
+  let len = 0;
+  for (const a of arrs) len += a.length;
+  const out = new Uint8Array(len);
+  let p = 0;
+  for (const a of arrs) {
+    out.set(a, p);
+    p += a.length;
+  }
+  return out;
+}
+function zipStore(files: { name: string; data: Uint8Array }[]): Uint8Array {
+  const local: Uint8Array[] = [];
+  const central: Uint8Array[] = [];
+  let offset = 0;
+  for (const f of files) {
+    const nameBytes = asciiBytes(f.name);
+    const crc = crc32(f.data);
+    const size = f.data.length;
+    const lfh = concatBytes([
+      u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0),
+      u32(crc), u32(size), u32(size),
+      u16(nameBytes.length), u16(0), nameBytes,
+    ]);
+    local.push(lfh, f.data);
+    const cdh = concatBytes([
+      u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+      u32(crc), u32(size), u32(size),
+      u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0),
+      u32(0), u32(offset), nameBytes,
+    ]);
+    central.push(cdh);
+    offset += lfh.length + size;
+  }
+  const centralBytes = concatBytes(central);
+  const eocd = concatBytes([
+    u32(0x06054b50), u16(0), u16(0),
+    u16(files.length), u16(files.length),
+    u32(centralBytes.length), u32(offset), u16(0),
+  ]);
+  return concatBytes([...local, centralBytes, eocd]);
+}
+
 // Reorder frames into the deck's existing slots: keep the current grid of
 // positions and drop the frames into them following the supplied order.
 export async function resequenceFrames(ids: string[]): Promise<number> {
@@ -1857,4 +1963,30 @@ export function getDeckInfo(): DeckInfo {
     names: ordered.slice(0, 40).map((f) => f.name),
     ids: ordered.slice(0, 40).map((f) => f.id),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Page navigation — jump between Figma pages without the left sidebar
+// ---------------------------------------------------------------------------
+
+export interface PageInfo {
+  id: string;
+  name: string;
+}
+
+// Reading id/name of root.children is allowed in dynamic-page mode without
+// loading the pages themselves.
+export function listPages(): PageInfo[] {
+  return figma.root.children.map((p) => ({ id: p.id, name: p.name }));
+}
+
+export function currentPageId(): string {
+  return figma.currentPage.id;
+}
+
+export async function gotoPage(id: string): Promise<void> {
+  const node = await figma.getNodeByIdAsync(id);
+  if (node && node.type === "PAGE") {
+    await figma.setCurrentPageAsync(node as PageNode);
+  }
 }

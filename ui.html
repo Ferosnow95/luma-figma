@@ -84,6 +84,24 @@
     }
     .badge .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); margin-right: 6px; }
 
+    /* ---- page nav (back / forward / switcher) ---- */
+    .pagenav { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 0 16px 10px; }
+    .navbtn {
+      width: 26px; height: 26px; flex: 0 0 auto; border: 1px solid var(--stroke);
+      background: var(--bg-secondary); color: var(--text); cursor: pointer; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center; padding: 0;
+    }
+    .navbtn svg { width: 14px; height: 14px; }
+    .navbtn:hover:not(:disabled) { background: var(--bg-hover); }
+    .navbtn:disabled { color: var(--muted); opacity: 0.45; cursor: default; }
+    .pagesel {
+      flex: 1 1 auto; height: 26px; min-width: 0; padding: 0 8px;
+      background: var(--bg-secondary); color: var(--text); border: 1px solid var(--stroke); border-radius: 6px;
+      font-family: inherit; font-size: 12px; outline: none; cursor: pointer;
+    }
+    .pagesel:hover { border-color: var(--muted); }
+    .pagesel:focus { border-color: var(--brand); }
+
     .views { flex: 1; overflow-y: auto; padding: 4px 16px 16px; }
     .views::-webkit-scrollbar { width: 9px; }
     .views::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 8px; border: 2px solid var(--bg); }
@@ -342,6 +360,16 @@
         </div>
         <div class="badge"><span class="dot"></span><span id="selBadge">0 frames</span></div>
       </header>
+
+      <div class="pagenav">
+        <button id="navBack" class="navbtn" title="Back (previous page)" disabled>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 4l-4 4 4 4"/></svg>
+        </button>
+        <button id="navFwd" class="navbtn" title="Forward" disabled>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        </button>
+        <select id="pageSel" class="pagesel" title="Switch page"></select>
+      </div>
 
       <div class="views">
         <!-- FLOW -->
@@ -690,6 +718,18 @@
 
         <!-- MORE -->
         <section class="view" id="view-more">
+          <div class="card">
+            <h3>Export for web</h3>
+            <p class="hint">Render every top-level slide to PNG and download a ZIP named by node id. Unzip into <code>web/assets/slides/</code> to power the animated web deck.</p>
+            <div class="field" style="margin-bottom:8px;">
+              <label for="webScale">Resolution</label>
+              <select id="webScale">
+                <option value="1">1× (1920 px)</option>
+                <option value="2">2× (3840 px)</option>
+              </select>
+            </div>
+            <button class="primary" id="exportWebBtn">Export deck for web</button>
+          </div>
           <div class="card soon">
             <h3>Table of contents <span class="soon-tag">SOON</span></h3>
             <p class="hint">Generate an agenda slide from your slide titles.</p>
@@ -769,6 +809,25 @@
       var s = $("status");
       s.textContent = text;
       s.className = cls || "";
+    }
+
+    /* ---- export deck for web ---- */
+    function downloadZip(data, count, bytes) {
+      try {
+        var blob = new Blob([data], { type: "application/zip" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "deck-slides.zip";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+        var mb = (bytes / 1048576).toFixed(1);
+        setStatus("Downloaded " + count + " slides (" + mb + " MB). Unzip into web/assets/slides/.", "ok");
+      } catch (err) {
+        setStatus("Export failed: " + err, "err");
+      }
     }
 
     /* ---- tabs ---- */
@@ -998,6 +1057,13 @@
         connect: state.pConnect, connectOptions: connectOptionsObj(),
       } });
       setStatus("Polishing deck\u2026");
+    };
+
+    /* ---- export for web ---- */
+    $("exportWebBtn").onclick = function () {
+      var scale = +$("webScale").value || 1;
+      post({ type: "export-web", options: { scale: scale } });
+      setStatus("Exporting slides\u2026 this can take a moment.");
     };
 
     /* ---- flow inspector ---- */
@@ -1460,8 +1526,7 @@
     /* ---- messages from plugin ---- */
     window.onmessage = function (e) {
       var msg = e.data.pluginMessage;
-      if (!msg) return;
-      if (msg.type === "selection") {
+      if (!msg) return;      if (msg.type === "selection") {
         var info = msg.info;
         var count = info.selectedFrames || 0;
         $("selBadge").textContent = count ? count + " selected" : (info.totalFrames + " on page");
@@ -1488,16 +1553,39 @@
           var img = document.querySelector('.thumb[data-thumb="' + t.id + '"]');
           if (img) img.src = t.url;
         });
+      } else if (msg.type === "web-export") {
+        downloadZip(msg.data, msg.count, msg.bytes);
       } else if (msg.type === "connections") {
         renderConnections(msg.list);
         if (msg.message) setStatus(msg.message, "ok");
       } else if (msg.type === "morph") {
         renderMorph(msg.report);
         if (msg.message) setStatus(msg.message, "ok");
+      } else if (msg.type === "pages") {
+        updateNav(msg);
       } else if (msg.type === "error") {
         setStatus(msg.message, "err");
       }
     };
+
+    /* ---- page navigation ---- */
+    $("navBack").onclick = function () { post({ type: "nav-back" }); };
+    $("navFwd").onclick = function () { post({ type: "nav-forward" }); };
+    $("pageSel").onchange = function () { post({ type: "set-page", options: { id: this.value } }); };
+    function updateNav(msg) {
+      var pages = msg.pages || [];
+      var sel = $("pageSel");
+      sel.innerHTML = "";
+      for (var i = 0; i < pages.length; i++) {
+        var o = document.createElement("option");
+        o.value = pages[i].id;
+        o.textContent = pages[i].name || "Page";
+        sel.appendChild(o);
+      }
+      sel.value = msg.currentId;
+      $("navBack").disabled = !msg.canBack;
+      $("navFwd").disabled = !msg.canForward;
+    }
 
     /* ---- drag-to-resize grip ---- */
     (function () {

@@ -31,6 +31,7 @@ import {
   fixJitter,
   renameFrames,
   exportThumbnails,
+  exportDeckForWeb,
   resequenceFrames,
   organizeConnected,
   branchFrame,
@@ -40,6 +41,8 @@ import {
   duplicateSlide,
   getBranchMap,
   getDeckInfo,
+  listPages,
+  gotoPage,
   ConnectOptions,
   PageNumberOptions,
   NormalizeOptions,
@@ -60,8 +63,49 @@ function pushSelectionForced(): void {
   figma.ui.postMessage({ type: "layersel", info: getLayerSelection() });
 }
 
+// ---------- page navigation + history ----------
+// History of visited page ids during this plugin session, so "Back" can return
+// to the previously viewed page without using Figma's left sidebar.
+let pageHistory: string[] = [];
+let histIndex = -1;
+let navigating = false; // set while we programmatically change pages (suppresses history record)
+
+function pushNav(): void {
+  figma.ui.postMessage({
+    type: "pages",
+    pages: listPages(),
+    currentId: figma.currentPage.id,
+    canBack: histIndex > 0,
+    canForward: histIndex < pageHistory.length - 1,
+  });
+}
+
+function recordPage(): void {
+  const id = figma.currentPage.id;
+  if (histIndex >= 0 && pageHistory[histIndex] === id) return;
+  pageHistory = pageHistory.slice(0, histIndex + 1);
+  pageHistory.push(id);
+  histIndex = pageHistory.length - 1;
+}
+
+async function navTo(index: number): Promise<void> {
+  if (index < 0 || index >= pageHistory.length) return;
+  histIndex = index;
+  navigating = true;
+  await gotoPage(pageHistory[histIndex]);
+}
+
 figma.on("selectionchange", pushSelection);
+figma.on("currentpagechange", () => {
+  if (navigating) navigating = false; // page change we initiated via Back/Forward
+  else recordPage(); // user (or the page switcher) navigated to a new page
+  pushSelection();
+  pushNav();
+});
+
+recordPage();
 pushSelection();
+pushNav();
 
 // --- Live morph guides: redraw the on-canvas motion paths as the design changes ---
 let guidesLive = false;
@@ -327,6 +371,16 @@ figma.ui.onmessage = async (msg: UIMessage) => {
         figma.ui.postMessage({ type: "thumbs", list });
         break;
       }
+      case "export-web": {
+        const o = (msg.options as { scale?: number }) || {};
+        figma.notify("Exporting slides\u2026", { timeout: 1500 });
+        const res = await exportDeckForWeb(o.scale || 1);
+        figma.ui.postMessage({ type: "web-export", data: res.data, count: res.count, bytes: res.bytes });
+        const message = `Exported ${res.count} slide${res.count > 1 ? "s" : ""}.`;
+        figma.notify(message);
+        figma.ui.postMessage({ type: "done", message });
+        break;
+      }
       case "apply-sequence": {
         const o = msg.options as {
           ids: string[];
@@ -367,6 +421,19 @@ figma.ui.onmessage = async (msg: UIMessage) => {
         if (typeof msg.width === "number" && typeof msg.height === "number") {
           figma.ui.resize(Math.round(msg.width), Math.round(msg.height));
         }
+        break;
+      }
+      case "set-page": {
+        const o = msg.options as { id: string };
+        await gotoPage(o.id);
+        break;
+      }
+      case "nav-back": {
+        await navTo(histIndex - 1);
+        break;
+      }
+      case "nav-forward": {
+        await navTo(histIndex + 1);
         break;
       }
       case "close": {
